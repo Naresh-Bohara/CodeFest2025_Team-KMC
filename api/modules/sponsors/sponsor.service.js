@@ -58,7 +58,6 @@ class SponsorService {
     const [sponsors, total] = await Promise.all([
       SponsorModel.find(query)
         .populate('municipalityId', 'name location.city')
-        .populate('createdBy', 'name email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -79,7 +78,6 @@ class SponsorService {
   getSponsorById = async (sponsorId) => {
     const sponsor = await SponsorModel.findById(sponsorId)
       .populate('municipalityId', 'name location.city contactEmail contactPhone')
-      .populate('createdBy', 'name email phone');
 
     if (!sponsor) {
       throw {
@@ -115,7 +113,6 @@ class SponsorService {
       { new: true }
     )
     .populate('municipalityId', 'name location.city')
-    .populate('createdBy', 'name email');
 
     return updatedSponsor;
   };
