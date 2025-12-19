@@ -8,7 +8,12 @@ import router from "./router.config.js";
 const application = express()
 
 // allow cors
-application.use(cors)
+application.use(cors({
+  origin: ['http://localhost:3000'], // Your frontend URL
+  credentials: true, // Allow credentials
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}))
 
 // parser
 application.use(express.json())
@@ -21,6 +26,8 @@ application.use("/api/v1/health", (request, response)=>{
     })
 })
 
+
+
 // router 
 application.use("/api/v1", router);
 
@@ -28,7 +35,7 @@ application.use((req, res, next)=>{
     next({status:HttpResponseCode.NOT_FOUND, message:"Not Found", statusCode:HttpResponse.notFound})
 })
 
-//garbage error handler
+// (error, request, response, nextFunction) =>error handling middlerware / garbage collector
 application.use((error, req, res, next)=>{
     console.log("GarbageError:", error)
 
@@ -36,6 +43,20 @@ application.use((error, req, res, next)=>{
     let message = error.message || "Internal Server Error"
     let status = error.statusCode || HttpResponse.internalServerError 
     let data = error.detail || null
+
+    if(+error.code === 11000){
+        statusCode = 400;
+       let msg = {}
+       Object.keys(error.keyPattern).map((field)=>{
+        if(field === "email"){
+            msg[field] = `Email is already registered, please use another email.`
+        }else{
+            msg[field] = `${field} must be unique`
+        }
+       })
+       message = msg
+        status = HttpResponse.validationFailed
+    }
 
     res.status(statusCode).json({
         data:data,
