@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { useGetGlobalActiveSponsorsQuery, useGetSponsorsQuery } from '../../../../store/api/sponsors';
 
 /* ---------------- HELPERS ---------------- */
 
@@ -14,7 +15,8 @@ const calculateDuration = (startDate, endDate) => {
 /* ---------------- COMPONENT ---------------- */
 
 const SponsorsList = () => {
-  const [sponsors, setSponsors] = useState([]);
+const {data:sponsors}=useGetGlobalActiveSponsorsQuery();
+console.log(sponsors);
   const [loading, setLoading] = useState(true);
 
   const [filters, setFilters] = useState({
@@ -39,10 +41,6 @@ const SponsorsList = () => {
     try {
       setLoading(true);
       const queryParams = new URLSearchParams(filters).toString();
-      const response = await axios.get(`/api/sponsors?${queryParams}`);
-
-      setSponsors(response.data.data || []);
-      setPagination(response.data.pagination || {});
     } catch (error) {
       console.error('Error fetching sponsors:', error);
     } finally {

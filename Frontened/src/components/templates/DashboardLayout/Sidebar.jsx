@@ -15,12 +15,14 @@ import {
   Award,
   MapPin,
   Bell,
-  HelpCircle
+  HelpCircle,
+  PersonStanding,
+  User2
 } from "lucide-react";
 import React, { useState } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
-import { selectCurrentUser } from "../../../store/slices/authSlice";
+import { logout, selectCurrentUser } from "../../../store/slices/authSlice";
 
 const menu = {
   "citizen": [
@@ -36,18 +38,7 @@ const menu = {
       path: "/dashboard/citizen/reports",
       color: "info"
     },
-    { 
-      label: "Rewards", 
-      icon: Award, 
-      path: "/dashboard/citizen/rewards",
-      color: "reward"
-    },
-    { 
-      label: "Leaderboard", 
-      icon: BarChart3, 
-      path: "/dashboard/citizen/leaderboard",
-      color: "secondary"
-    },
+    
     { 
       label: "Profile", 
       icon: User, 
@@ -75,12 +66,7 @@ const menu = {
       path: "/dashboard/municipality-admin/staff",
       color: "community"
     },
-    { 
-      label: "Citizens", 
-      icon: User, 
-      path: "/dashboard/municipality-admin/users",
-      color: "environment"
-    },
+
     { 
       label: "Analytics", 
       icon: BarChart3, 
@@ -147,27 +133,19 @@ const menu = {
       path: "/dashboard/system-admin/sponsors",
       color: "community"
     },
-    { 
-      label: "System Logs", 
-      icon: Shield, 
-      path: "/dashboard/system-admin/logs",
-      color: "neutral"
-    },
-    { 
-      label: "Settings", 
-      icon: Settings, 
-      path: "/dashboard/system-admin/settings",
-      color: "environment"
-    },
+  
   ],
 }
 
-const Sidebar = ({ role, onLogout }) => {
+const Sidebar = ({ role }) => {
   const [open, setOpen] = useState(true);
   const [activeMenu, setActiveMenu] = useState(null);
   const location = useLocation();
+  const dispatch=useDispatch();
   const user = useSelector(selectCurrentUser);
-
+const logoutHandler=()=>{
+  dispatch(logout());
+}
   const menuItems = menu[role] || [];
 
   // Get color class based on color type
@@ -258,7 +236,7 @@ const Sidebar = ({ role, onLogout }) => {
     
     return colors[colorType]?.[type] || colors.primary[type];
   };
-
+   
   // Get role display name
   const getRoleDisplayName = (role) => {
     const roleNames = {
@@ -374,28 +352,13 @@ const Sidebar = ({ role, onLogout }) => {
           )}
 
           {/* Quick Actions */}
-          {open && (
-            <div className="px-4 mb-6">
-              <p className="text-xs font-medium text-primary-300 mb-3 px-1">QUICK ACTIONS</p>
-              <div className="space-y-2">
-                <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group">
-                  <Bell className="w-4 h-4 text-primary-300 group-hover:text-white" />
-                  <span className="text-sm">Notifications</span>
-                  <span className="ml-auto text-xs bg-danger-500 text-white px-2 py-0.5 rounded-full">3</span>
-                </button>
-                <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group">
-                  <HelpCircle className="w-4 h-4 text-primary-300 group-hover:text-white" />
-                  <span className="text-sm">Help & Support</span>
-                </button>
-              </div>
-            </div>
-          )}
+        
         </div>
 
         {/* Footer Section */}
         <div className="p-4 border-t border-white/10">
           <button
-            onClick={onLogout}
+            onClick={logoutHandler}
             className={`group flex items-center justify-center gap-3 w-full py-3 rounded-xl transition-all duration-200 ${
               open 
                 ? 'bg-gradient-to-r from-danger-500 to-danger-600 hover:from-danger-600 hover:to-danger-700 hover:shadow-lg' 
@@ -405,7 +368,7 @@ const Sidebar = ({ role, onLogout }) => {
             <LogOut className="w-5 h-5" />
             {open && (
               <>
-                <span className="font-medium">Logout</span>
+                <button  className="font-medium">Logout</button>
                 <span className="text-xs opacity-70">{user?.email || ''}</span>
               </>
             )}

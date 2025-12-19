@@ -44,7 +44,7 @@ import { ROUTES } from '../../../utils/constants/routes';
 import { useCreateMunicipalityMutation } from '../../../store/api/Municipality';
 
 // Environment variable for LocationIQ API Key
-const LOCATIONIQ_API_KEY = import.meta.env.VITE_LOCATIONIQ_API_KEY;
+const LOCATIONIQ_API_KEY = "pk.5d73c73c12cc3a799c590072dc54e0e0";
 
 // Boundary range options (in degrees)
 const BOUNDARY_RANGES = [

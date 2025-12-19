@@ -111,30 +111,7 @@ const AdminDashboardPage = () => {
         </div>
       </motion.div>
 
-      {/* Time Range Filter */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
-          {['day', 'week', 'month', 'quarter', 'year'].map((range) => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                timeRange === range
-                  ? 'bg-white text-primary-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {range.charAt(0).toUpperCase() + range.slice(1)}
-            </button>
-          ))}
-        </div>
-        
-        <Button variant="ghost" className="flex items-center gap-2">
-          <Download className="w-4 h-4" />
-          Export Report
-        </Button>
-      </div>
-
+     
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[

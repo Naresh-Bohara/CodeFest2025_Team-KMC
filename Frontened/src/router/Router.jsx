@@ -6,12 +6,9 @@ import { publicRoutes } from './routes/publicRoutes'
 import { protectedRoutes } from './routes/protectedRoutes'
 import { RouteRenderer } from './components/RouteRenderer'
 import CitizenDashboard from '../features/Dashboard/CitizenDashboard/CitizenDashboard'
-import MunicipalityAdmin from '../features/Dashboard/Municipality/MunicipalityAdmin'
-import ProfilePage from '../features/auth/pages/ProfilePage'
 import DashboardLayout from '../components/templates/DashboardLayout/DashboardLayout'
 import UserProfile from '../features/Dashboard/CitizenDashboard/UserProfile'
 import ReportMapView from '../features/Dashboard/CitizenDashboard/ReportMapView'
-import SystemAdminDashboard from '../features/Dashboard/SystemAdmin/AdminDashboardPage'
 import AdminDashboardPage from '../features/Dashboard/SystemAdmin/AdminDashboardPage'
 import CreateMunicipality from '../features/Dashboard/SystemAdmin/CreateMunicipality'
 import ListAllMunicipalities from '../features/Dashboard/SystemAdmin/ListAllMunicipalities'
@@ -20,6 +17,8 @@ import EditMunicipality from '../features/Dashboard/SystemAdmin/EditMunicipality
 import SponsorsList from '../features/Dashboard/SystemAdmin/Sponsers/ListSponspors'
 import SponsorForm from '../features/Dashboard/SystemAdmin/Sponsers/SponsorsForm'
 import NotFoundPage from './pages/NotFound'
+import MunicipalityDashboard from '../features/Dashboard/Municipality/MunicipalityDashboard'
+import AdminProfile from '../features/Dashboard/SystemAdmin/AdminProfile'
 
 // Lazy load dashboard pages for better performance
 const DashboardLoader = ({ role }) => {
@@ -102,7 +101,10 @@ const Router = () => {
             }}
           />
         }
-      />
+
+      >
+          <Route index element={<MunicipalityDashboard/>}/>
+        </Route>
 
 
       <Route
