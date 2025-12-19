@@ -4,57 +4,11 @@ import CloudinaryService from "../../services/cloudinary.service.js";
 import HttpResponseCode from "../../constants/http-status-code.contants.js";
 import HttpResponse from "../../constants/response-status.contants.js";
 import UserModel from "../users/user.model.js";
-import exifr from 'exifr'; 
 
 class ReportService {
   createReport = async (reportData, files, citizenId) => {
     try {
-      // 1. Check for similar active reports
-      const existingReport = await ReportModel.findOne({
-        citizenId: citizenId,
-        category: reportData.category,
-        status: { $in: ['pending', 'assigned', 'in_progress'] },
-        $or: [
-          ...(reportData.location?.coordinates ? [{
-            'location.coordinates.lat': {
-              $gte: reportData.location.coordinates.lat - 0.001,
-              $lte: reportData.location.coordinates.lat + 0.001
-            },
-            'location.coordinates.lng': {
-              $gte: reportData.location.coordinates.lng - 0.001,
-              $lte: reportData.location.coordinates.lng + 0.001
-            }
-          }] : []),
-          
-          ...(reportData.location?.address ? [{
-            'location.address': {
-              $regex: new RegExp(reportData.location.address.split(' ').slice(0, 3).join('.*'), 'i')
-            }
-          }] : []),
-          
-          ...(reportData.title ? [{
-            title: {
-              $regex: new RegExp(reportData.title.split(' ').slice(0, 3).join('.*'), 'i')
-            }
-          }] : [])
-        ],
-        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      });
-
-      if (existingReport) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "You already have an active report for this issue/location. Please check your existing reports.",
-          statusCode: HttpResponse.validationFailed,
-          data: {
-            existingReportId: existingReport._id,
-            submittedAt: existingReport.createdAt,
-            status: existingReport.status
-          }
-        };
-      }
-
-      // 2. Check municipality exists and supports category
+      // 1. BASIC VALIDATION: Check municipality exists
       const municipality = await MunicipalityModel.findById(reportData.municipalityId);
       if (!municipality) {
         throw {
@@ -64,85 +18,146 @@ class ReportService {
         };
       }
 
-      if (!municipality.reportCategories.includes(reportData.category)) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: `This municipality doesn't accept ${reportData.category} reports. Available categories: ${municipality.reportCategories.join(', ')}`,
-          statusCode: HttpResponse.validationFailed
-        };
-      }
-
-      // 3. VALIDATE REPORT LOCATION IS WITHIN MUNICIPALITY BOUNDARY
-      if (!reportData.location?.coordinates) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "Report coordinates are required for location validation",
-          statusCode: HttpResponse.validationFailed
-        };
-      }
-
-      const isWithinBoundary = this.isLocationWithinBoundary(
-        reportData.location.coordinates.lat,
-        reportData.location.coordinates.lng,
-        municipality.boundaryBox
-      );
-
-      if (!isWithinBoundary) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "Report location is outside the municipality's jurisdiction.",
-          statusCode: HttpResponse.validationFailed,
-          data: {
-            municipalityName: municipality.name,
-            boundaryBox: municipality.boundaryBox
-          }
-        };
-      }
-
-      // 4. VALIDATE IMAGE GPS LOCATIONS (REJECT IF OUTSIDE)
-      let imageValidationResults = {
-        valid: [],
-        invalid: [],
-        noGPS: []
-      };
-
-      if (files?.photos && files.photos.length > 0) {
-        imageValidationResults = await this.validateAllImageLocations(
-          files.photos,
-          municipality.boundaryBox
-        );
-
-        // REJECT if any images are outside boundary
-        if (imageValidationResults.invalid.length > 0) {
+      // 2. SIMPLE CATEGORY VALIDATION: Check if municipality accepts this category
+      if (municipality.reportCategories && municipality.reportCategories.length > 0) {
+        if (!municipality.reportCategories.includes(reportData.category)) {
           throw {
             status: HttpResponseCode.BAD_REQUEST,
-            message: `${imageValidationResults.invalid.length} image(s) were taken outside ${municipality.name}. Please upload images taken within the municipality.`,
+            message: `This municipality doesn't accept ${reportData.category} reports`,
             statusCode: HttpResponse.validationFailed,
             data: {
-              invalidImages: imageValidationResults.invalid
+              acceptedCategories: municipality.reportCategories
             }
           };
         }
       }
 
-      // 5. Upload files to Cloudinary
+      // 3. SIMPLE LOCATION VALIDATION (Basic Nepal coordinates check)
+      if (reportData.location?.coordinates) {
+        const { lat, lng } = reportData.location.coordinates;
+        
+        // Basic Nepal coordinates range
+        const isWithinNepal = lat >= 26.0 && lat <= 31.0 && lng >= 80.0 && lng <= 89.0;
+        
+        if (!isWithinNepal) {
+          throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: "Invalid coordinates. Please use valid Nepal coordinates.",
+            statusCode: HttpResponse.validationFailed
+          };
+        }
+      } else {
+        throw {
+          status: HttpResponseCode.BAD_REQUEST,
+          message: "Location coordinates are required",
+          statusCode: HttpResponse.validationFailed
+        };
+      }
+
+      // 4. DUPLICATE REPORT CHECK (Simple version)
+      const recentDuplicate = await ReportModel.findOne({
+        citizenId: citizenId,
+        category: reportData.category,
+        status: { $in: ['pending', 'assigned', 'in_progress'] },
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+      });
+
+      if (recentDuplicate) {
+        throw {
+          status: HttpResponseCode.BAD_REQUEST,
+          message: "You already have an active report for this category in the last 24 hours",
+          statusCode: HttpResponse.validationFailed,
+          data: {
+            existingReportId: recentDuplicate._id,
+            status: recentDuplicate.status
+          }
+        };
+      }
+
+      // 5. FILE VALIDATION
       const uploadedPhotos = [];
+      const uploadedVideos = [];
+      
       if (files?.photos) {
+        // Validate photo count (max 5)
+        if (files.photos.length > 5) {
+          throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: "Maximum 5 photos allowed per report",
+            statusCode: HttpResponse.validationFailed
+          };
+        }
+
         for (const photo of files.photos) {
+          // Validate file type
+          const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+          if (!allowedTypes.includes(photo.mimetype)) {
+            throw {
+              status: HttpResponseCode.BAD_REQUEST,
+              message: `Invalid file type for ${photo.originalname}. Only JPG, PNG, WebP allowed`,
+              statusCode: HttpResponse.validationFailed
+            };
+          }
+
+          // Validate file size (max 5MB)
+          if (photo.size > 5 * 1024 * 1024) {
+            throw {
+              status: HttpResponseCode.BAD_REQUEST,
+              message: `File ${photo.originalname} is too large. Maximum 5MB allowed`,
+              statusCode: HttpResponse.validationFailed
+            };
+          }
+
           const uploadResult = await CloudinaryService.uploadReportImage(photo.path, `report_${Date.now()}`);
           uploadedPhotos.push(uploadResult.url);
         }
       }
 
-      const uploadedVideos = [];
       if (files?.videos) {
+        // Validate video count (max 2)
+        if (files.videos.length > 2) {
+          throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: "Maximum 2 videos allowed per report",
+            statusCode: HttpResponse.validationFailed
+          };
+        }
+
         for (const video of files.videos) {
+          // Validate video type
+          const allowedVideoTypes = ['video/mp4', 'video/mpeg', 'video/quicktime'];
+          if (!allowedVideoTypes.includes(video.mimetype)) {
+            throw {
+              status: HttpResponseCode.BAD_REQUEST,
+              message: `Invalid video type for ${video.originalname}. Only MP4, MPEG, MOV allowed`,
+              statusCode: HttpResponse.validationFailed
+            };
+          }
+
+          // Validate video size (max 50MB)
+          if (video.size > 50 * 1024 * 1024) {
+            throw {
+              status: HttpResponseCode.BAD_REQUEST,
+              message: `Video ${video.originalname} is too large. Maximum 50MB allowed`,
+              statusCode: HttpResponse.validationFailed
+            };
+          }
+
           const uploadResult = await CloudinaryService.uploadReportVideo(video.path, `report_${Date.now()}`);
           uploadedVideos.push(uploadResult.url);
         }
       }
 
-      // 6. Create and save report
+      // 6. SEVERITY VALIDATION
+      if (reportData.severity === 'emergency' && !uploadedPhotos.length && !uploadedVideos.length) {
+        throw {
+          status: HttpResponseCode.BAD_REQUEST,
+          message: "Emergency reports require photo/video evidence",
+          statusCode: HttpResponse.validationFailed
+        };
+      }
+
+      // 7. Create and save report
       const report = new ReportModel({
         ...reportData,
         citizenId,
@@ -150,13 +165,8 @@ class ReportService {
         videos: uploadedVideos,
         validationInfo: {
           locationValidated: true,
-          boundaryBox: municipality.boundaryBox,
-          imageValidation: {
-            totalImages: files?.photos?.length || 0,
-            imagesWithGPS: imageValidationResults.valid.length,
-            imagesNoGPS: imageValidationResults.noGPS.length,
-            allWithinBoundary: imageValidationResults.invalid.length === 0
-          }
+          filesValidated: true,
+          totalFiles: (uploadedPhotos.length + uploadedVideos.length)
         }
       });
 
@@ -168,72 +178,27 @@ class ReportService {
     }
   }
 
-  // Check if location is within boundary box
+  // SIMPLE boundary check - only if boundary exists
   isLocationWithinBoundary = (lat, lng, boundaryBox) => {
-    if (!boundaryBox) {
-      // No boundary set - allow with warning
-      console.warn('No boundary box set for municipality');
+    // Only validate if boundary has all required fields
+    if (!boundaryBox || 
+        !boundaryBox.minLat || 
+        !boundaryBox.maxLat ||
+        !boundaryBox.minLng ||
+        !boundaryBox.maxLng) {
+      console.log('No valid boundary box, accepting all coordinates');
       return true;
     }
 
-    return lat >= boundaryBox.minLat && 
-           lat <= boundaryBox.maxLat && 
-           lng >= boundaryBox.minLng && 
-           lng <= boundaryBox.maxLng;
+    const isWithin = lat >= boundaryBox.minLat && 
+                     lat <= boundaryBox.maxLat && 
+                     lng >= boundaryBox.minLng && 
+                     lng <= boundaryBox.maxLng;
+    
+    return isWithin;
   }
 
-  // VALIDATE ALL IMAGE LOCATIONS
-  validateAllImageLocations = async (photos, municipalityBoundaryBox) => {
-    const results = {
-      valid: [],    // Images with GPS within boundary
-      invalid: [],  // Images with GPS outside boundary
-      noGPS: []     // Images without GPS data
-    };
-
-    for (const photo of photos) {
-      try {
-        // Extract EXIF data including GPS
-        const exifData = await exifr.parse(photo.path);
-        
-        if (exifData?.latitude && exifData?.longitude) {
-          const imageLat = exifData.latitude;
-          const imageLng = exifData.longitude;
-          
-          // Check if image location is within municipality boundary
-          const isWithin = this.isLocationWithinBoundary(
-            imageLat, 
-            imageLng, 
-            municipalityBoundaryBox
-          );
-          
-          if (isWithin) {
-            results.valid.push({
-              filename: photo.originalname,
-              coordinates: { lat: imageLat, lng: imageLng }
-            });
-          } else {
-            results.invalid.push({
-              filename: photo.originalname,
-              coordinates: { lat: imageLat, lng: imageLng }
-            });
-          }
-        } else {
-          results.noGPS.push({
-            filename: photo.originalname
-          });
-        }
-      } catch (error) {
-        results.noGPS.push({
-          filename: photo.originalname,
-          error: error.message
-        });
-      }
-    }
-
-    return results;
-  }
-
-  // Update report method with location validation
+  // Update report method with basic validation
   updateReport = async (reportId, updateData, files, citizenId) => {
     const report = await ReportModel.findOne({ _id: reportId, citizenId });
 
@@ -245,71 +210,72 @@ class ReportService {
       };
     }
 
+    // Can only update pending reports
     if (report.status !== 'pending') {
       throw {
         status: HttpResponseCode.BAD_REQUEST,
         message: "Cannot update report after it has been processed",
-        statusCode: HttpResponse.validationFailed
+        statusCode: HttpResponse.validationFailed,
+        data: {
+          currentStatus: report.status
+        }
       };
     }
 
-    // If updating location, validate it's within municipality boundary
-    if (updateData.location?.coordinates) {
-      const municipality = await MunicipalityModel.findById(report.municipalityId);
-      
-      if (municipality?.boundaryBox) {
-        const isWithin = this.isLocationWithinBoundary(
-          updateData.location.coordinates.lat,
-          updateData.location.coordinates.lng,
-          municipality.boundaryBox
-        );
-
-        if (!isWithin) {
-          throw {
-            status: HttpResponseCode.BAD_REQUEST,
-            message: "Updated location is outside the municipality's jurisdiction",
-            statusCode: HttpResponse.validationFailed
-          };
-        }
-      }
-    }
-
-    // Validate new images if provided
-    if (files?.photos && files.photos.length > 0) {
-      const municipality = await MunicipalityModel.findById(report.municipalityId);
-      const imageValidationResults = await this.validateAllImageLocations(
-        files.photos,
-        municipality?.boundaryBox
-      );
-
-      if (imageValidationResults.invalid.length > 0) {
+    // Validate new photos
+    if (files?.photos) {
+      if (files.photos.length + report.photos.length > 5) {
         throw {
           status: HttpResponseCode.BAD_REQUEST,
-          message: `${imageValidationResults.invalid.length} new image(s) are outside municipality jurisdiction`,
+          message: `Maximum 5 photos allowed. You already have ${report.photos.length} photos`,
           statusCode: HttpResponse.validationFailed
         };
       }
-    }
 
-    // Upload new photos if provided
-    if (files?.photos) {
       for (const photo of files.photos) {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(photo.mimetype)) {
+          throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: `Invalid file type. Only JPG, PNG, WebP allowed`,
+            statusCode: HttpResponse.validationFailed
+          };
+        }
+
         const uploadResult = await CloudinaryService.uploadReportImage(photo.path, `report_${Date.now()}`);
         report.photos.push(uploadResult.url);
       }
     }
 
-    // Upload new videos if provided
+    // Validate new videos
     if (files?.videos) {
+      if (files.videos.length + report.videos.length > 2) {
+        throw {
+          status: HttpResponseCode.BAD_REQUEST,
+          message: `Maximum 2 videos allowed. You already have ${report.videos.length} videos`,
+          statusCode: HttpResponse.validationFailed
+        };
+      }
+
       for (const video of files.videos) {
+        const allowedTypes = ['video/mp4', 'video/mpeg', 'video/quicktime'];
+        if (!allowedTypes.includes(video.mimetype)) {
+          throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: `Invalid video type. Only MP4, MPEG, MOV allowed`,
+            statusCode: HttpResponse.validationFailed
+          };
+        }
+
         const uploadResult = await CloudinaryService.uploadReportVideo(video.path, `report_${Date.now()}`);
         report.videos.push(uploadResult.url);
       }
     }
 
-    // Update other fields
+    // Update other fields (except status and assigned fields)
+    const nonEditableFields = ['status', 'assignedStaffId', 'assignedAt', 'resolvedAt', 'pointsAwarded'];
     Object.keys(updateData).forEach(key => {
-      if (updateData[key] !== undefined) {
+      if (updateData[key] !== undefined && !nonEditableFields.includes(key)) {
         report[key] = updateData[key];
       }
     });
@@ -381,7 +347,10 @@ class ReportService {
       throw {
         status: HttpResponseCode.BAD_REQUEST,
         message: "Cannot delete report after it has been processed",
-        statusCode: HttpResponse.validationFailed
+        statusCode: HttpResponse.validationFailed,
+        data: {
+          currentStatus: report.status
+        }
       };
     }
 
@@ -391,7 +360,6 @@ class ReportService {
 
   updateReportStatus = async (reportId, updateData, staffId) => {
     const report = await ReportModel.findById(reportId);
-
     if (!report) {
       throw {
         status: HttpResponseCode.NOT_FOUND,
@@ -409,50 +377,18 @@ class ReportService {
       };
     }
 
-    if (!staffUser.municipalityId || !report.municipalityId) {
-      throw {
-        status: HttpResponseCode.INTERNAL_SERVER_ERROR,
-        message: "Municipality data missing",
-        statusCode: HttpResponse.serverError
-      };
-    }
-
-    if (staffUser.municipalityId.toString() !== report.municipalityId.toString()) {
-      throw {
-        status: HttpResponseCode.FORBIDDEN,
-        message: "Access denied. You can only manage reports from your municipality",
-        statusCode: HttpResponse.accessDenied
-      };
-    }
-
-    if (updateData.assignedStaffId) {
-      const assignedStaff = await UserModel.findById(updateData.assignedStaffId);
-      
-      if (!assignedStaff) {
+    // Check municipality access
+    if (staffUser.municipalityId && report.municipalityId) {
+      if (staffUser.municipalityId.toString() !== report.municipalityId.toString()) {
         throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "Assigned staff member not found",
-          statusCode: HttpResponse.validationFailed
-        };
-      }
-
-      if (!assignedStaff.municipalityId) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "Assigned staff has no municipality",
-          statusCode: HttpResponse.validationFailed
-        };
-      }
-
-      if (assignedStaff.municipalityId.toString() !== report.municipalityId.toString()) {
-        throw {
-          status: HttpResponseCode.BAD_REQUEST,
-          message: "Cannot assign report to staff from different municipality",
-          statusCode: HttpResponse.validationFailed
+          status: HttpResponseCode.FORBIDDEN,
+          message: "Access denied. You can only manage reports from your municipality",
+          statusCode: HttpResponse.accessDenied
         };
       }
     }
 
+    // Status transition validation
     const validTransitions = {
       'pending': ['assigned', 'resolved'],
       'assigned': ['in_progress', 'resolved'],
@@ -464,12 +400,16 @@ class ReportService {
       throw {
         status: HttpResponseCode.BAD_REQUEST,
         message: `Invalid status transition from ${report.status} to ${updateData.status}`,
-        statusCode: HttpResponse.validationFailed
+        statusCode: HttpResponse.validationFailed,
+        data: {
+          allowedTransitions: validTransitions[report.status]
+        }
       };
     }
 
     const statusUpdates = { ...updateData };
 
+    // Set timestamps based on status changes
     if (updateData.status === 'assigned' && report.status !== 'assigned') {
       statusUpdates.assignedAt = new Date();
     }
@@ -480,8 +420,7 @@ class ReportService {
 
     if (updateData.status === 'resolved' && report.status !== 'resolved') {
       statusUpdates.resolvedAt = new Date();
-      const pointsAwarded = this.calculatePoints(report.category);
-      statusUpdates.pointsAwarded = pointsAwarded;
+      statusUpdates.pointsAwarded = this.calculatePoints(report.category);
     }
 
     const updatedReport = await ReportModel.findByIdAndUpdate(
@@ -565,14 +504,6 @@ class ReportService {
       };
     }
 
-    if (report.assignedStaffId?.toString() === assignedStaffId) {
-      throw {
-        status: HttpResponseCode.BAD_REQUEST,
-        message: "Report is already assigned to this staff member",
-        statusCode: HttpResponse.validationFailed
-      };
-    }
-
     const staff = await UserModel.findOne({
       _id: assignedStaffId,
       municipalityId: adminMunicipalityId,
@@ -584,22 +515,14 @@ class ReportService {
       throw {
         status: HttpResponseCode.BAD_REQUEST,
         message: "Staff member not found or invalid",
-        statusCode: HttpResponse.validationFailed
-      };
-    }
-
-    if (staff.staffProfile?.availability === false) {
-      throw {
-        status: HttpResponseCode.BAD_REQUEST,
-        message: "Staff member is currently unavailable for assignments",
         statusCode: HttpResponse.validationFailed,
         data: {
-          staffName: staff.name,
-          department: staff.staffProfile?.department
+          validRoles: ['municipality_admin', 'field_staff']
         }
       };
     }
 
+    // Validate due date (max 30 days)
     const maxDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const finalDueDate = dueDate || report.dueDate;
     
@@ -632,26 +555,7 @@ class ReportService {
     .populate('municipalityId', 'name location.city contactPhone')
     .populate('assignedStaffId', 'name email phone profileImage staffProfile.department staffProfile.designation');
 
-    try {
-      await this.sendAssignmentNotifications(updatedReport, staff, report.citizenId);
-    } catch (notificationError) {
-      console.error('Failed to send assignment notifications:', notificationError);
-    }
-
     return updatedReport;
-  };
-
-  sendAssignmentNotifications = async (report, staff, citizen) => {
-    const staffMessage = `You have been assigned a new report: "${report.title}". Due: ${new Date(report.dueDate).toLocaleDateString()}. Priority: ${report.priority}`;
-    
-    const citizenMessage = `Your report "${report.title}" has been assigned to ${staff.name} (${staff.staffProfile?.department}). We'll keep you updated on the progress.`;
-
-    console.log('Assignment notifications:', {
-      staff: staffMessage,
-      citizen: citizenMessage
-    });
-    
-    return true;
   };
 
   getAssignedReports = async (staffId, filter = {}) => {
