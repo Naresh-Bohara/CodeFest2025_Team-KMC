@@ -133,19 +133,23 @@ class AuthService {
         return formattedData;
     }
 
-    registerUser = async (data) => {
-        const existingUser = await UserModel.findOne({ email: data.email });
-        if (existingUser) {
-            throw {
-                status: HttpResponseCode.BAD_REQUEST,
-                message: "Email already registered",
-                statusCode: HttpResponse.validationFailed
-            };
-        }
-
-        const userObj = new UserModel(data);
-        return await userObj.save();
+ registerUser = async (data) => {
+    const existingUser = await UserModel.findOne({ email: data.email });
+    if (existingUser) {
+        throw {
+            status: HttpResponseCode.BAD_REQUEST,
+            message: "Email already registered",
+            statusCode: HttpResponse.validationFailed
+        };
     }
+
+    // HASH THE PASSWORD BEFORE SAVING
+    const hashedPassword = bcrypt.hashSync(data.password, 12);
+    data.password = hashedPassword;
+
+    const userObj = new UserModel(data);
+    return await userObj.save();
+} 
 
     sendActivationEmail = async (user) => {
         let msg = `
