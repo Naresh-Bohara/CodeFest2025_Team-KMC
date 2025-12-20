@@ -13,7 +13,6 @@ export const reportsApi = baseApi.injectEndpoints({
       }),
     }),
 
-
     // Get all reports
     getReports: builder.query({
       query: () => ({
