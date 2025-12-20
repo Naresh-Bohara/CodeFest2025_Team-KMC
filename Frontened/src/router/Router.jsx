@@ -23,6 +23,8 @@ import CitizenProfile from '../features/Dashboard/CitizenDashboard/CitizenProfil
 import CitizenReports from '../features/Dashboard/CitizenDashboard/MyReports'
 import ReportForm from '../features/Dashboard/CitizenDashboard/CreateReport'
 import Reports from '../features/Dashboard/Municipality/Reports'
+import MunicipalityReports from '../features/Dashboard/Municipality/Reports'
+import MapView from '../features/Dashboard/Municipality/MapView'
 
 // Lazy load dashboard pages for better performance
 const DashboardLoader = ({ role }) => {
@@ -109,7 +111,8 @@ const Router = () => {
 
       >
           <Route index element={<MunicipalityDashboard/>}/>
-          <Route path='reports' element={<Reports/>}/>
+          <Route path='reports' element={<MunicipalityReports/>}/>
+          <Route path='mapview' element={<MapView/>}/>
         </Route>
 
 
