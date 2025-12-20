@@ -18,8 +18,9 @@ import {
 } from "lucide-react";
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Link, useLocation } from "react-router-dom";
+import { data, Link, useLocation } from "react-router-dom";
 import { logout, selectCurrentUser } from "../../../store/slices/authSlice";
+import { useGetMunicipalityByIdQuery } from "../../../store/api/Municipality";
 
 const menu = {
   "citizen": [
@@ -66,22 +67,9 @@ const menu = {
     { 
       label: "Manage Staff", 
       icon: Users, 
-      path: "/dashboard/municipality-admin/staff",
+      path: "/dashboard/municipality-admin/Staff",
       color: "community"
-    },
-
-    { 
-      label: "Analytics", 
-      icon: BarChart3, 
-      path: "/dashboard/municipality-admin/analytics",
-      color: "secondary"
-    },
-    { 
-      label: "Settings", 
-      icon: Settings, 
-      path: "/dashboard/municipality-admin/settings",
-      color: "neutral"
-    },
+    }
   ],
 
   "municipality_staff": [
@@ -251,6 +239,8 @@ const logoutHandler=()=>{
     return roleNames[role] || role;
   };
 
+  const {data:munidata}=useGetMunicipalityByIdQuery(user?.municipalityId);
+ console.log(data)
   return (
     <div className="flex">
       <div
@@ -300,7 +290,7 @@ const logoutHandler=()=>{
             {open && user.municipality && (
               <div className="mt-3 flex items-center gap-2 text-sm text-primary-200 bg-white/5 p-2 rounded-lg">
                 <MapPin className="w-4 h-4" />
-                <span className="truncate">{user.municipality.name}</span>
+                <span className="truncate">{munidata?.data.name}</span>
               </div>
             )}
           </div>
@@ -368,11 +358,10 @@ const logoutHandler=()=>{
                 : 'bg-danger-500 hover:bg-danger-600'
             } shadow-md`}
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="w-5 h-5 flex flex-cols" />
             {open && (
               <>
                 <button  className="font-medium">Logout</button>
-                <span className="text-xs opacity-70">{user?.email || ''}</span>
               </>
             )}
           </button>

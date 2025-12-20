@@ -74,28 +74,25 @@ const CitizenDashboard = () => {
       .slice(0, 5)
   }, [reportsData])
 
-  // Extract user stats from profile data
   const userStats = React.useMemo(() => {
-    if (!profileData) {
-      return {
-        name: 'Citizen User',
-        points: 0,
-        role: 'citizen',
-        municipalityName: 'Local Municipality'
-      }
-    }
-    
-    // Extract from your backend response structure
-    const user = profileData.data || profileData
-    
+  if (!profileData) {
     return {
-      name: user.name || 'Citizen User',
-      points: user.points || 0,
-      role: user.role || 'citizen',
-      municipalityName: user.municipalityId?.name || 
-                       (user.municipalityId ? `Municipality ${user.municipalityId}` : 'Local Municipality')
+      name: 'Citizen User',
+      points: 0,
+      role: 'citizen',
+      municipalityName: 'Local Municipality'
     }
-  }, [profileData])
+  }
+
+  const user = profileData.data || profileData
+
+  return {
+    name: user.name || 'Citizen User',
+    points: user.points || 0,
+    role: user.role || 'citizen',
+    municipalityName: user.municipalityName || 'Local Municipality' 
+  }
+}, [profileData])
 
   const dashboardData = {
     user: {
