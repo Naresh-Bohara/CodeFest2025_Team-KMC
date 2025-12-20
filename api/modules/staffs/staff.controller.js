@@ -23,34 +23,36 @@ class StaffController {
     }
   };
 
-  getStaff = async (req, res, next) => {
+ getStaff = async (req, res, next) => {
     try {
-      const municipalityId = req.loggedInUser.municipalityId;
-      const filter = req.validatedQuery || req.query;
-      const requestingUserId = req.loggedInUser._id;
+        const municipalityId = req.loggedInUser.municipalityId;
+        const userRole = req.loggedInUser.role;
+        const filter = req.validatedQuery || req.query;
+        const requestingUserId = req.loggedInUser._id;
 
-      // Convert comma-separated strings to arrays for query
-      if (filter.assignedWards && typeof filter.assignedWards === 'string') {
-        filter.assignedWards = filter.assignedWards.split(',').map(w => w.trim());
-      }
-      if (filter.skills && typeof filter.skills === 'string') {
-        filter.skills = filter.skills.split(',').map(s => s.trim());
-      }
+        // Convert comma-separated strings to arrays for query
+        if (filter.assignedWards && typeof filter.assignedWards === 'string') {
+            filter.assignedWards = filter.assignedWards.split(',').map(w => w.trim());
+        }
+        if (filter.skills && typeof filter.skills === 'string') {
+            filter.skills = filter.skills.split(',').map(s => s.trim());
+        }
 
-      const result = await staffSvc.getStaff(filter, municipalityId, requestingUserId);
+        // Pass user role to service
+        const result = await staffSvc.getStaff(filter, municipalityId, requestingUserId, userRole);
 
-      res.json({
-        data: result.staff,
-        pagination: result.pagination,
-        message: "Staff fetched successfully",
-        status: HttpResponse.success,
-        options: null
-      });
+        res.json({
+            data: result.staff,
+            pagination: result.pagination,
+            message: "Staff fetched successfully",
+            status: HttpResponse.success,
+            options: null
+        });
 
     } catch (exception) {
-      next(exception);
+        next(exception);
     }
-  };
+};
 
   getStaffById = async (req, res, next) => {
     try {

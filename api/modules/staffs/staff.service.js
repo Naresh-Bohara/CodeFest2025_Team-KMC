@@ -154,64 +154,88 @@ class StaffService {
     };
   };
 
-  getStaff = async (filter = {}, municipalityId, requestingUserId) => {
+  getStaff = async (filter = {}, municipalityId, requestingUserId, userRole) => {
     const { page = 1, limit = 10, department, availability, role, status, ...otherFilters } = filter;
 
-    const query = { 
-      municipalityId,
-      ...otherFilters 
-    };
+    // Build query based on user role
+    const query = { ...otherFilters };
+
+    // SYSTEM ADMIN can see all staff (no municipality filter)
+    // MUNICIPALITY ADMIN can only see staff from their municipality
+    if (userRole === 'municipality_admin') {
+        if (!municipalityId) {
+            throw {
+                status: HttpResponseCode.BAD_REQUEST,
+                message: "Municipality ID required for municipality admin",
+                statusCode: HttpResponse.validationFailed
+            };
+        }
+        query.municipalityId = municipalityId;
+    }
+    // If user is field_staff, they shouldn't be accessing this route anyway
+    // but if they do, restrict to their municipality
+    else if (userRole === 'field_staff') {
+        if (!municipalityId) {
+            throw {
+                status: HttpResponseCode.FORBIDDEN,
+                message: "You don't have permission to view staff list",
+                statusCode: HttpResponse.accessDenied
+            };
+        }
+        query.municipalityId = municipalityId;
+    }
+    // System admin - no municipality filter, can see all staff
 
     // Filter by department if provided
     if (department) {
-      query.department = department;
+        query.department = department;
     }
 
     // Filter by availability if provided
     if (availability !== undefined) {
-      query.availability = availability;
+        query.availability = availability;
     }
 
     // Filter by status if provided
     if (status) {
-      query.status = status;
+        query.status = status;
     }
 
     const skip = (page - 1) * limit;
     
     // Get staff profiles with pagination
     const [staffProfiles, total] = await Promise.all([
-      StaffModel.find(query)
-        .populate({
-          path: 'userId',
-          select: 'name email phone profileImage role status lastLogin'
-        })
-        .populate('supervisorId', 'employeeId designation name')
-        .populate('municipalityId', 'name location.city')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      StaffModel.countDocuments(query)
+        StaffModel.find(query)
+            .populate({
+                path: 'userId',
+                select: 'name email phone profileImage role status lastLogin'
+            })
+            .populate('supervisorId', 'employeeId designation name')
+            .populate('municipalityId', 'name location.city')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit),
+        StaffModel.countDocuments(query)
     ]);
 
     // Filter by role if provided (after fetching)
     let filteredStaff = staffProfiles;
     if (role) {
-      filteredStaff = staffProfiles.filter(staff => 
-        staff.userId && staff.userId.role === role
-      );
+        filteredStaff = staffProfiles.filter(staff => 
+            staff.userId && staff.userId.role === role
+        );
     }
 
     return {
-      staff: filteredStaff,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: role ? filteredStaff.length : total,
-        pages: Math.ceil((role ? filteredStaff.length : total) / limit)
-      }
+        staff: filteredStaff,
+        pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: role ? filteredStaff.length : total,
+            pages: Math.ceil((role ? filteredStaff.length : total) / limit)
+        }
     };
-  };
+};
 
   getStaffById = async (staffId, municipalityId, requestingUserId) => {
     // Get requesting user for permission check

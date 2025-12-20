@@ -176,6 +176,22 @@ class ReportController {
       next(exception);
     }
   }
+
+  getDashboardCounts = async (req, res, next) => {
+  try {
+    const counts = await reportSvc.getDashboardCounts();
+
+    res.json({
+      data: counts,
+      message: "Dashboard counts retrieved successfully",
+      status: HttpResponse.success,
+      options: null
+    });
+
+  } catch (exception) {
+    next(exception);
+  }
+}
 }
 
 const reportCtrl = new ReportController();
