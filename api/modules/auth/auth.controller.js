@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import HttpResponse from "../../constants/response-status.contants.js";
 import HttpResponseCode from "../../constants/http-status-code.contants.js";
 import authSvc from "./auth.service.js";
+import MunicipalityModel from "../municipalities/municipality.model.js";
 
 class AuthController {
     register = async (req, res, next) => {
@@ -94,111 +95,128 @@ class AuthController {
         }
     };
 
-    login = async (req, res, next) => {
-        try {
-            const { email, password } = req.body;
-            const user = await authSvc.getUserByFilter({ email });
+  login = async (req, res, next) => {
+    try {
+        const { email, password } = req.body;
+        const user = await authSvc.getUserByFilter({ email });
 
-            if (user.status !== "active") {
-                throw {
-                    status: HttpResponseCode.BAD_REQUEST, 
-                    message: "Account not active.", 
-                    statusCode: HttpResponse.user.notActivate
-                }
+        if (user.status !== "active") {
+            throw {
+                status: HttpResponseCode.BAD_REQUEST, 
+                message: "Account not active.", 
+                statusCode: HttpResponse.user.notActivate
             }
-
-            if (bcrypt.compareSync(password, user.password)) {
-                const payload = {
-                    sub: user._id,
-                    role: user.role,
-                    municipalityId: user.municipalityId
-                };
-
-                const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '10h' });
-                const refreshToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "15d" });
-
-                let userDetail = {
-                    _id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    phone: user.phone,
-                    profileImage: user.profileImage,
-                    municipalityId: user.municipalityId,
-                    points: user.points,
-                    lastLogin: user.lastLogin
-                };
-
-                if (user.role === 'citizen' && user.citizenProfile) {
-                    userDetail.citizenProfile = user.citizenProfile;
-                } else if (user.role === 'field_staff' && user.staffProfile) {
-                    userDetail.staffProfile = user.staffProfile;
-                } else if (user.role === 'sponsor' && user.sponsorProfile) {
-                    userDetail.sponsorProfile = user.sponsorProfile;
-                }
-
-                await authSvc.updateUserById({ lastLogin: new Date() }, user._id);
-
-                res.json({
-                    data: {
-                        token: token,
-                        refreshToken: refreshToken,
-                        detail: userDetail
-                    },
-                    message: "Login successful.",
-                    status: HttpResponse.success,
-                    options: null
-                });
-
-            } else {
-                throw {
-                    status: HttpResponseCode.BAD_REQUEST, 
-                    message: "Invalid credentials.", 
-                    statusCode: HttpResponse.user.credentialNotMatch
-                }
-            }
-
-        } catch (exception) {
-            next(exception);
         }
-    };
+
+        if (!bcrypt.compareSync(password, user.password)) {
+            throw {
+                status: HttpResponseCode.BAD_REQUEST, 
+                message: "Invalid credentials.", 
+                statusCode: HttpResponse.user.credentialNotMatch
+            }
+        }
+
+        // Fetch municipality name
+        let municipalityName = null;
+        if (user.municipalityId) {
+            const municipality = await MunicipalityModel.findById(user.municipalityId);
+            municipalityName = municipality ? municipality.name : null;
+        }
+
+        const payload = {
+            sub: user._id,
+            role: user.role,
+            municipalityId: user.municipalityId
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '10h' });
+        const refreshToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "15d" });
+
+        let userDetail = {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            phone: user.phone,
+            profileImage: user.profileImage,
+            municipalityId: user.municipalityId,
+            municipalityName, // ADD THIS
+            points: user.points,
+            lastLogin: user.lastLogin
+        };
+
+        if (user.role === 'citizen' && user.citizenProfile) {
+            userDetail.citizenProfile = user.citizenProfile;
+        } else if (user.role === 'field_staff' && user.staffProfile) {
+            userDetail.staffProfile = user.staffProfile;
+        } else if (user.role === 'sponsor' && user.sponsorProfile) {
+            userDetail.sponsorProfile = user.sponsorProfile;
+        }
+
+        await authSvc.updateUserById({ lastLogin: new Date() }, user._id);
+
+        res.json({
+            data: {
+                token,
+                refreshToken,
+                detail: userDetail
+            },
+            message: "Login successful.",
+            status: HttpResponse.success,
+            options: null
+        });
+
+    } catch (exception) {
+        next(exception);
+    }
+};
+
 
     getLoggedInUser = async (req, res, next) => {
-        try {
-            const user = await authSvc.getUserByFilter({ _id: req.loggedInUser._id });
-            
-            let userDetail = {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                phone: user.phone,
-                profileImage: user.profileImage,
-                municipalityId: user.municipalityId,
-                points: user.points,
-                status: user.status,
-                lastLogin: user.lastLogin
-            };
+    try {
+        const user = await authSvc.getUserByFilter({ _id: req.loggedInUser._id });
 
-            if (user.role === 'citizen' && user.citizenProfile) {
-                userDetail.citizenProfile = user.citizenProfile;
-            } else if (user.role === 'field_staff' && user.staffProfile) {
-                userDetail.staffProfile = user.staffProfile;
-            } else if (user.role === 'sponsor' && user.sponsorProfile) {
-                userDetail.sponsorProfile = user.sponsorProfile;
-            }
-
-            res.json({
-                data: userDetail,
-                message: "User profile fetched successfully.",
-                status: HttpResponse.success,
-                options: null
-            });
-
-        } catch (exception) {
-            next(exception);
+        // Fetch municipality name
+        let municipalityName = null;
+        if (user.municipalityId) {
+            const municipality = await MunicipalityModel.findById(user.municipalityId);
+            municipalityName = municipality ? municipality.name : null;
         }
-    };
+
+        let userDetail = {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            phone: user.phone,
+            profileImage: user.profileImage,
+            municipalityId: user.municipalityId,
+            municipalityName, // ADD THIS
+            points: user.points,
+            status: user.status,
+            lastLogin: user.lastLogin
+        };
+
+        if (user.role === 'citizen' && user.citizenProfile) {
+            userDetail.citizenProfile = user.citizenProfile;
+        } else if (user.role === 'field_staff' && user.staffProfile) {
+            userDetail.staffProfile = user.staffProfile;
+        } else if (user.role === 'sponsor' && user.sponsorProfile) {
+            userDetail.sponsorProfile = user.sponsorProfile;
+        }
+
+        res.json({
+            data: userDetail,
+            message: "User profile fetched successfully.",
+            status: HttpResponse.success,
+            options: null
+        });
+
+    } catch (exception) {
+        next(exception);
+    }
+};
+
 
     refreshToken = (req, res, next) => {
         try {
