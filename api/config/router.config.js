@@ -18,5 +18,4 @@ router.use("/reports", reportRouter);
 router.use("/staffs", staffRouter);
 router.use("/users", userRouter);
 
-
 export default router;
