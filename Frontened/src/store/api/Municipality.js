@@ -7,7 +7,7 @@ export const municipalityApi = baseApi.injectEndpoints({
     // Get municipalities
     getMunicipalities: builder.query({
       query: () => ({
-        url: BackendMunicipality.getAllMunicipalities,
+        url: BackendMunicipality.getallMunicipalities,
         method: "GET",
       }),
     }),

@@ -14,10 +14,7 @@ import {
   AlertCircle,
   Award,
   MapPin,
-  Bell,
-  HelpCircle,
-  PersonStanding,
-  User2
+  MapIcon
 } from "lucide-react";
 import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -59,6 +56,12 @@ const menu = {
       icon: FileText, 
       path: "/dashboard/municipality-admin/reports",
       color: "info"
+    },
+    {
+      label:"MapView",
+      icon:MapIcon,
+      path:"/dashboard/municipality-admin/mapview",
+      color:"info"
     },
     { 
       label: "Manage Staff", 

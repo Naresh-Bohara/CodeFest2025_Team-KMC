@@ -21,11 +21,13 @@ import {
   Trash2,
   Edit3,
   Eye,
-  Target,
-  TrendingUp
+  Star,
+  TrendingUp,
+  Target
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useGetMyReportsQuery, useDeleteOwnReportMutation } from '../../../store/api/reportApi'
+import { useGetProfileQuery } from '../../../store/api/authApi'
 
 const CitizenReports = () => {
   const navigate = useNavigate()
@@ -37,6 +39,14 @@ const CitizenReports = () => {
   const [expandedReport, setExpandedReport] = useState(null)
   const [filteredReports, setFilteredReports] = useState([])
   const [allReports, setAllReports] = useState([])
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  // Fetch profile data
+  const { 
+    data: profileData,
+    isLoading: profileLoading,
+    isError: profileError 
+  } = useGetProfileQuery()
 
   // Fetch reports data from backend
   const {
@@ -107,6 +117,7 @@ const CitizenReports = () => {
     try {
       await deleteReport(reportId).unwrap()
       refetch() // Refresh reports list
+      setDeleteConfirm(null)
     } catch (error) {
       alert(error?.data?.message || 'Failed to delete report')
     }
@@ -239,6 +250,11 @@ const CitizenReports = () => {
   const handleCreateReport = () => {
     navigate('/dashboard/citizen/new')
   }
+
+  // Get user points from profile
+  const userPoints = profileData?.data?.points || 0
+  const userName = profileData?.data?.name || 'User'
+  const userImage = profileData?.data?.profileImage
 
   // Calculate stats
   const stats = calculateStats()
@@ -606,7 +622,9 @@ const CitizenReports = () => {
   )
 
   // Loading state
-  if (reportsLoading) {
+  const isLoading = reportsLoading || profileLoading
+
+  if (isLoading) {
     return (
       <div className="p-4 md:p-6 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -618,16 +636,16 @@ const CitizenReports = () => {
   }
 
   // Error state
-  if (reportsError) {
+  if (reportsError || profileError) {
     return (
       <div className="p-4 md:p-6">
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <div className="flex items-center">
             <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
-            <h3 className="text-red-800 font-medium">Error Loading Reports</h3>
+            <h3 className="text-red-800 font-medium">Error Loading Data</h3>
           </div>
           <p className="text-red-600 text-sm mt-2">
-            {reportsErrorData?.data?.message || 'Failed to load reports. Please try again.'}
+            {reportsErrorData?.data?.message || 'Failed to load data. Please try again.'}
           </p>
           <button 
             onClick={() => refetch()}
@@ -643,80 +661,164 @@ const CitizenReports = () => {
 
   return (
     <div className="p-4 md:p-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Reports</h1>
-          <p className="text-gray-600 mt-1">
-            Track all your submitted issues and complaints
-          </p>
-        </div>
-        
-        <div className="flex space-x-3 mt-4 md:mt-0">
-          <button
-            onClick={() => refetch()}
-            className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </button>
-          
-          <button
-            onClick={handleCreateReport}
-            className="inline-flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
-          >
-            <AlertTriangle className="w-5 h-5 mr-2" />
-            New Report
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-50 rounded-lg mr-2">
-              <Target className="w-4 h-4 text-blue-600" />
+      {/* Header with Stats */}
+      <div className="flex flex-col lg:flex-row gap-6 mb-6">
+        {/* Reward Card */}
+        <div className="lg:w-1/3">
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-5 border border-amber-200 shadow-sm">
+            <div className="flex items-center mb-4">
+              <div className="p-2 bg-amber-100 rounded-lg mr-3">
+                <Star className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Your Community Score</h3>
+                <p className="text-sm text-gray-600">Based on your reports</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Total</p>
-              <p className="text-lg font-bold text-gray-900">{stats.total}</p>
+            
+            <div className="text-center mb-4">
+              <div className="text-3xl font-bold text-amber-700 mb-1">
+                {userPoints} Points
+              </div>
+              <p className="text-sm text-amber-600">Total Community Contribution</p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                    <span className="text-blue-600 font-medium">{stats.total}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Total Reports</p>
+                    <p className="text-xs text-gray-500">All submitted issues</p>
+                  </div>
+                </div>
+                <span className="text-sm text-gray-600">+{stats.total * 10} pts</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center mr-3">
+                    <span className="text-green-600 font-medium">{stats.resolved}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Resolved</p>
+                    <p className="text-xs text-gray-500">Issues fixed</p>
+                  </div>
+                </div>
+                <span className="text-sm text-gray-600">+{stats.resolved * 30} pts</span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center mr-3">
+                    <span className="text-orange-600 font-medium">{stats.inProgress}</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">In Progress</p>
+                    <p className="text-xs text-gray-500">Being addressed</p>
+                  </div>
+                </div>
+                <span className="text-sm text-gray-600">+{stats.inProgress * 5} pts</span>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-amber-200">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Next Milestone</span>
+                <span className="font-medium text-gray-900">100 Points</span>
+              </div>
+              <div className="mt-2 h-2 bg-amber-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-amber-500 rounded-full"
+                  style={{ width: `${Math.min((userPoints / 100) * 100, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {Math.max(0, 100 - userPoints)} more points to go!
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-50 rounded-lg mr-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-            </div>
+        {/* Header with Stats */}
+        <div className="lg:w-2/3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
             <div>
-              <p className="text-sm text-gray-500">Resolved</p>
-              <p className="text-lg font-bold text-gray-900">{stats.resolved}</p>
+              <h1 className="text-2xl font-bold text-gray-900">My Reports</h1>
+              <p className="text-gray-600 mt-1">
+                Track all your submitted issues and complaints
+              </p>
+            </div>
+            
+            <div className="flex space-x-3 mt-4 md:mt-0">
+              <button
+                onClick={() => refetch()}
+                className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </button>
+              
+              <button
+                onClick={handleCreateReport}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <AlertTriangle className="w-5 h-5 mr-2" />
+                New Report
+              </button>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-50 rounded-lg mr-2">
-              <Clock className="w-4 h-4 text-yellow-600" />
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-50 rounded-lg mr-2">
+                  <Target className="w-4 h-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Total</p>
+                  <p className="text-lg font-bold text-gray-900">{stats.total}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Pending</p>
-              <p className="text-lg font-bold text-gray-900">{stats.pending}</p>
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-3 border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-orange-50 rounded-lg mr-2">
-              <TrendingUp className="w-4 h-4 text-orange-600" />
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-50 rounded-lg mr-2">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Resolved</p>
+                  <p className="text-lg font-bold text-gray-900">{stats.resolved}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-500">In Progress</p>
-              <p className="text-lg font-bold text-gray-900">{stats.inProgress}</p>
+
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-yellow-50 rounded-lg mr-2">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Pending</p>
+                  <p className="text-lg font-bold text-gray-900">{stats.pending}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-2 bg-orange-50 rounded-lg mr-2">
+                  <TrendingUp className="w-4 h-4 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">In Progress</p>
+                  <p className="text-lg font-bold text-gray-900">{stats.inProgress}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

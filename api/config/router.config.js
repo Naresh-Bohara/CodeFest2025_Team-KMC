@@ -6,6 +6,7 @@ import emergencyRouter from "../modules/emergency-services/emergency-services.ro
 import sponsorRouter from "../modules/sponsors/sponsor.router.js";
 import reportRouter from "../modules/reports/report.router.js";
 import staffRouter from "../modules/staffs/staff.router.js";
+import userRouter from "../modules/users/user.router.js";
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.use("/emergency-services", emergencyRouter);
 router.use("/sponsors", sponsorRouter);
 router.use("/reports", reportRouter);
 router.use("/staffs", staffRouter);
+router.use("/users", userRouter);
 
 
 export default router;

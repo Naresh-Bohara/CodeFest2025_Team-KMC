@@ -29,10 +29,60 @@ import {
   UserCheck,
   Shield,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Wrench,
+  AlertTriangle,
+  ThumbsUp
 } from 'lucide-react';
 import { useGetReportsQuery } from '../../../store/api/reportApi';
 
+// Helper function to format date
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now - date);
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+// Helper function to get category icon
+const getCategoryIcon = (category) => {
+  const icons = {
+    electricity: AlertCircle,
+    road: Wrench,
+    water: AlertTriangle,
+    sanitation: Shield,
+    infrastructure: Building2,
+    default: FileText
+  };
+  return icons[category] || icons.default;
+};
+
+// Helper function to calculate stats from real data
+const calculateStats = (reports) => {
+  if (!reports || !Array.isArray(reports)) return null;
+  
+  const totalReports = reports.length;
+  const pendingReports = reports.filter(r => r.status === 'pending').length;
+  const resolvedReports = reports.filter(r => r.status === 'resolved').length;
+  const highPriorityReports = reports.filter(r => r.priority === 'high').length;
+  const validatedReports = reports.filter(r => r.validationInfo?.locationValidated).length;
+  const totalPoints = reports.reduce((sum, r) => sum + (r.pointsAwarded || 0), 0);
+  
+  return {
+    totalReports,
+    pendingReports,
+    resolvedReports,
+    highPriorityReports,
+    validatedReports,
+    totalPoints,
+    resolutionRate: totalReports > 0 ? Math.round((resolvedReports / totalReports) * 100) : 0
+  };
+};
 
 // Reusable Stat Card Component
 const StatCard = ({ title, value, change, icon: Icon, color = 'primary', trend = 'up', subtitle, loading = false }) => {
@@ -145,7 +195,7 @@ const DataTable = ({ columns, data, pageSize = 5, loading = false, onRowClick, a
     if (searchTerm) {
       const filtered = data.filter(item =>
         Object.values(item).some(val =>
-          val.toString().toLowerCase().includes(searchTerm.toLowerCase())
+          val && val.toString().toLowerCase().includes(searchTerm.toLowerCase())
         )
       );
       setFilteredData(filtered);
@@ -235,7 +285,7 @@ const DataTable = ({ columns, data, pageSize = 5, loading = false, onRowClick, a
           <tbody className="divide-y divide-neutral-100">
             {paginatedData.map((row, index) => (
               <tr
-                key={row.id}
+                key={row._id}
                 className={`hover:bg-neutral-50 transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
                 onClick={() => onRowClick && onRowClick(row)}
               >
@@ -251,10 +301,54 @@ const DataTable = ({ columns, data, pageSize = 5, loading = false, onRowClick, a
                       }`}>
                         {row[column.key]}
                       </span>
-                    ) : column.key === 'reward' ? (
+                    ) : column.key === 'pointsAwarded' ? (
                       <div className="flex items-center gap-2 animate-reward-glow">
                         <Award className="w-4 h-4 text-reward-500" />
                         <span className="font-medium text-reward-600">{row[column.key]} pts</span>
+                      </div>
+                    ) : column.key === 'category' ? (
+                      <div className="flex items-center gap-2">
+                        {React.createElement(getCategoryIcon(row[column.key]), { className: "w-4 h-4 text-neutral-600" })}
+                        <span className="capitalize">{row[column.key]}</span>
+                      </div>
+                    ) : column.key === 'location' ? (
+                      <div className="text-sm text-neutral-700">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          <span>Ward {row.location?.ward}</span>
+                        </div>
+                        <div className="text-xs text-neutral-500 truncate max-w-[200px]">
+                          {row.location?.address}
+                        </div>
+                      </div>
+                    ) : column.key === 'citizen' ? (
+                      <div className="flex items-center gap-2">
+                        {row.citizenId?.profileImage ? (
+                          <img 
+                            src={row.citizenId.profileImage} 
+                            alt={row.citizenId.name}
+                            className="w-6 h-6 rounded-full"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center">
+                            <UserCheck className="w-3 h-3 text-primary-600" />
+                          </div>
+                        )}
+                        <span className="text-sm">{row.citizenId?.name}</span>
+                      </div>
+                    ) : column.key === 'validation' ? (
+                      <div className="flex items-center gap-2">
+                        {row.validationInfo?.locationValidated ? (
+                          <div className="flex items-center gap-1 text-environment-600">
+                            <CheckCircle className="w-4 h-4" />
+                            <span className="text-xs">Validated</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-warning-600">
+                            <AlertCircle className="w-4 h-4" />
+                            <span className="text-xs">Needs Validation</span>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-sm text-neutral-700">
@@ -395,38 +489,42 @@ const NotificationAlert = ({ type = 'info', title, message, time, onClick }) => 
 
 // Main Dashboard Component
 const MunicipalityDashboard = () => {
-    const {data:report}=useGetReportsQuery();
-    console.log(report);
+  const { data: reportData, isLoading, refetch } = useGetReportsQuery();
+  
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
-  // Mock data
-  const statsData = [
-    { title: 'Total Reports', value: '1,247', change: '+12%', icon: FileText, color: 'primary', trend: 'up', subtitle: 'Last 30 days' },
-    { title: 'Pending Actions', value: '24', change: '-3%', icon: Clock, color: 'warning', trend: 'down', subtitle: 'Requires attention' },
-    { title: 'Resolved Issues', value: '892', change: '+8%', icon: CheckCircle, color: 'environment', trend: 'up', subtitle: '71% resolution rate' },
-    { title: 'Active Citizens', value: '5,241', change: '+15%', icon: Users, color: 'info', trend: 'up', subtitle: 'Engaged users' },
-    { title: 'Staff Members', value: '42', change: '+2%', icon: UserCheck, color: 'secondary', trend: 'up', subtitle: 'Municipality staff' },
-    { title: 'Reward Points', value: '12,480', change: '+25%', icon: Award, color: 'reward', trend: 'up', subtitle: 'Total distributed' },
-  ];
-
+  // Process real data
+  const reports = reportData?.data || [];
+  const stats = calculateStats(reports);
+  
+  // Format table data from real reports
   const tableColumns = [
-    { key: 'id', label: 'ID' },
     { key: 'title', label: 'Report Title' },
     { key: 'category', label: 'Category' },
+    { key: 'location', label: 'Location' },
+    { key: 'citizen', label: 'Citizen' },
     { key: 'status', label: 'Status' },
     { key: 'priority', label: 'Priority' },
-    { key: 'date', label: 'Date' },
-    { key: 'reward', label: 'Reward' },
+    { key: 'pointsAwarded', label: 'Reward' },
+    { key: 'validation', label: 'Validation' },
   ];
 
-  const tableData = [
-    { id: '#RPT-001', title: 'Pothole on Main Street', category: 'Infrastructure', status: 'in_progress', priority: 'high', date: 'Today', reward: 250 },
-    { id: '#RPT-002', title: 'Street Light Outage', category: 'Utilities', status: 'pending', priority: 'medium', date: 'Yesterday', reward: 150 },
-    { id: '#RPT-003', title: 'Garbage Collection Delay', category: 'Sanitation', status: 'resolved', priority: 'low', date: '2 days ago', reward: 100 },
-    { id: '#RPT-004', title: 'Park Maintenance Request', category: 'Parks & Rec', status: 'closed', priority: 'medium', date: '3 days ago', reward: 200 },
-    { id: '#RPT-005', title: 'Water Leak Report', category: 'Utilities', status: 'rejected', priority: 'high', date: '4 days ago', reward: 0 },
-  ];
+  const tableData = reports.map(report => ({
+    ...report,
+    id: report._id,
+    date: formatDate(report.createdAt)
+  }));
+
+  // Calculate stats for dashboard
+  const statsData = stats ? [
+    { title: 'Total Reports', value: stats.totalReports.toString(), change: '+12%', icon: FileText, color: 'primary', trend: 'up', subtitle: `${reportData?.pagination?.total || 0} total` },
+    { title: 'Pending Actions', value: stats.pendingReports.toString(), change: '-3%', icon: Clock, color: 'warning', trend: 'down', subtitle: 'Requires attention' },
+    { title: 'Resolved Issues', value: stats.resolvedReports.toString(), change: '+8%', icon: CheckCircle, color: 'environment', trend: 'up', subtitle: `${stats.resolutionRate}% resolution rate` },
+    { title: 'High Priority', value: stats.highPriorityReports.toString(), change: '+5%', icon: AlertTriangle, color: 'danger', trend: 'up', subtitle: 'Emergency issues' },
+    { title: 'Validated Reports', value: stats.validatedReports.toString(), change: '+18%', icon: CheckCircle, color: 'info', trend: 'up', subtitle: 'Location verified' },
+    { title: 'Reward Points', value: stats.totalPoints.toString(), change: '+25%', icon: Award, color: 'reward', trend: 'up', subtitle: 'Total distributed' },
+  ] : [];
 
   const quickActions = [
     { icon: Plus, title: 'New Report', description: 'Create new issue report', color: 'primary' },
@@ -435,123 +533,178 @@ const MunicipalityDashboard = () => {
     { icon: Settings, title: 'Settings', description: 'Dashboard preferences', color: 'neutral' },
   ];
 
-  const notifications = [
-    { type: 'warning', title: 'High Priority Alert', message: 'Emergency repair needed on Bridge Road', time: '10 min ago' },
-    { type: 'info', title: 'New Citizen Joined', message: 'John Doe registered as active citizen', time: '1 hour ago' },
-    { type: 'success', title: 'Issue Resolved', message: 'Garbage collection route optimized', time: '2 hours ago' },
-    { type: 'danger', title: 'Staff Notice', message: 'Staff meeting at 3 PM today', time: '5 hours ago' },
-  ];
+  // Generate notifications from real data
+  const notifications = reports.slice(0, 4).map(report => ({
+    type: report.priority === 'high' ? 'warning' : report.status === 'resolved' ? 'success' : 'info',
+    title: report.priority === 'high' ? 'High Priority Alert' : report.status === 'pending' ? 'New Report Submitted' : 'Issue Updated',
+    message: `${report.title} - ${report.category}`,
+    time: formatDate(report.createdAt),
+    data: report
+  }));
+
+  // Generate recent activity from real data
+  const recentActivity = reports.slice(0, 4).map(report => ({
+    user: report.citizenId?.name || 'Anonymous Citizen',
+    action: `submitted ${report.category} report`,
+    time: formatDate(report.createdAt),
+    color: report.priority === 'high' ? 'danger' : report.validationInfo?.locationValidated ? 'environment' : 'info'
+  }));
 
   const simulateLoading = () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 2000);
+    refetch().finally(() => setLoading(false));
+  };
+
+  // Calculate performance score
+  const calculatePerformanceScore = () => {
+    if (!stats || stats.totalReports === 0) return 8.7;
+    
+    const validationRate = (stats.validatedReports / stats.totalReports) * 100;
+    const pendingRate = (stats.pendingReports / stats.totalReports) * 100;
+    
+    let score = 8.5; // Base score
+    if (validationRate > 50) score += 0.5;
+    if (pendingRate < 30) score += 0.5;
+    if (stats.resolutionRate > 70) score += 0.5;
+    
+    return Math.min(10, score).toFixed(1);
   };
 
   return (
-
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-neutral-800 font-heading animate-fade-in">Municipality Dashboard</h1>
-            <p className="text-neutral-600 mt-2 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-primary-500" />
-              Welcome back! Here's what's happening in your municipality.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={simulateLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <div className="relative">
-              <button className="p-2 rounded-lg bg-white border border-neutral-300 hover:bg-neutral-50 transition-colors">
-                <Bell className="w-5 h-5 text-neutral-600" />
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-neutral-800 font-heading animate-fade-in">
+            {reports[0]?.municipalityId?.name || 'Municipality'} Dashboard
+          </h1>
+          <p className="text-neutral-600 mt-2 flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-primary-500" />
+            {reports[0]?.municipalityId?.location?.city ? 
+              `Welcome to ${reports[0].municipalityId.location.city} Municipality Dashboard` :
+              'Welcome back! Here\'s what\'s happening in your municipality.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={simulateLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors"
+            disabled={isLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading || loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <div className="relative">
+            <button className="p-2 rounded-lg bg-white border border-neutral-300 hover:bg-neutral-50 transition-colors">
+              <Bell className="w-5 h-5 text-neutral-600" />
+              {notifications.length > 0 && (
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-danger-500 text-white text-xs rounded-full flex items-center justify-center animate-bounce-subtle">
-                  3
+                  {notifications.length}
                 </span>
-              </button>
-            </div>
+              )}
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {statsData.map((stat, index) => (
-            <StatCard key={index} {...stat} loading={loading} />
-          ))}
-        </div>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {statsData.map((stat, index) => (
+          <StatCard key={index} {...stat} loading={isLoading || loading} />
+        ))}
+      </div>
 
-        {/* Charts and Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {quickActions.map((action, index) => (
-                <QuickActionCard key={index} {...action} />
-              ))}
-            </div>
+      {/* Charts and Main Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Quick Actions */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {quickActions.map((action, index) => (
+              <QuickActionCard key={index} {...action} />
+            ))}
+          </div>
 
-            {/* Reports Table */}
-            <DataTable
-              columns={tableColumns}
-              data={tableData}
-              loading={loading}
-              actions={['view', 'edit', 'delete']}
-              onRowClick={(row) => console.log('Row clicked:', row)}
-            />
+          {/* Reports Table */}
+          <DataTable
+            columns={tableColumns}
+            data={tableData}
+            loading={isLoading || loading}
+            actions={['view', 'edit', 'delete']}
+            onRowClick={(row) => console.log('Row clicked:', row)}
+          />
 
-            {/* Chart Section */}
-            <ChartContainer
-              title="Report Trends"
-              subtitle="Monthly report statistics"
-              actions={['refresh', 'filter', 'download']}
-              loading={loading}
-            >
-              <div className="h-64 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-r from-primary-500 to-primary-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-reward-glow">
-                    <BarChart3 className="w-8 h-8 text-white" />
+          {/* Chart Section */}
+          <ChartContainer
+            title="Report Trends"
+            subtitle={`Showing ${reports.length} reports from ${reportData?.pagination?.total || 0} total`}
+            actions={['refresh', 'filter', 'download']}
+            loading={isLoading || loading}
+          >
+            <div className="h-64 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gradient-to-r from-primary-500 to-primary-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-reward-glow">
+                  <BarChart3 className="w-8 h-8 text-white" />
+                </div>
+                <p className="text-sm text-neutral-500">Report Analytics Dashboard</p>
+                <div className="mt-4 grid grid-cols-2 gap-4 max-w-md mx-auto">
+                  <div className="text-left p-3 bg-neutral-50 rounded-lg">
+                    <p className="text-xs text-neutral-500">Categories</p>
+                    <p className="font-semibold">{new Set(reports.map(r => r.category)).size} Types</p>
                   </div>
-                  <p className="text-sm text-neutral-500">Chart visualization would appear here</p>
-                  <p className="text-xs text-neutral-400 mt-1">Using charts from libraries like Recharts or Chart.js</p>
+                  <div className="text-left p-3 bg-neutral-50 rounded-lg">
+                    <p className="text-xs text-neutral-500">Avg. Response</p>
+                    <p className="font-semibold">24-48 hrs</p>
+                  </div>
+                  <div className="text-left p-3 bg-neutral-50 rounded-lg">
+                    <p className="text-xs text-neutral-500">Active Wards</p>
+                    <p className="font-semibold">{new Set(reports.map(r => r.location?.ward).filter(Boolean)).size} Wards</p>
+                  </div>
+                  <div className="text-left p-3 bg-neutral-50 rounded-lg">
+                    <p className="text-xs text-neutral-500">Citizens</p>
+                    <p className="font-semibold">{new Set(reports.map(r => r.citizenId?._id).filter(Boolean)).size} Active</p>
+                  </div>
                 </div>
               </div>
-            </ChartContainer>
+            </div>
+          </ChartContainer>
+        </div>
+
+        {/* Right Column */}
+        <div className="space-y-6">
+          {/* Notifications */}
+          <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6 animate-slide-up">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-neutral-800">Notifications</h3>
+              {notifications.length > 0 && (
+                <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">
+                  {notifications.length} new
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {notifications.length > 0 ? (
+                notifications.map((notification, index) => (
+                  <NotificationAlert key={index} {...notification} />
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Bell className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+                  <p className="text-sm text-neutral-500">No new notifications</p>
+                </div>
+              )}
+            </div>
+            <button className="w-full mt-4 text-center text-primary-600 hover:text-primary-700 text-sm font-medium py-2 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors">
+              View All Notifications
+            </button>
           </div>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Notifications */}
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6 animate-slide-up">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-neutral-800">Notifications</h3>
-                <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">4 new</span>
-              </div>
-              <div className="space-y-2">
-                {notifications.map((notification, index) => (
-                  <NotificationAlert key={index} {...notification} />
-                ))}
-              </div>
-              <button className="w-full mt-4 text-center text-primary-600 hover:text-primary-700 text-sm font-medium py-2 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors">
-                View All Notifications
-              </button>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6 animate-slide-up">
-              <h3 className="text-lg font-semibold text-neutral-800 mb-4">Recent Activity</h3>
-              <div className="space-y-4">
-                {[
-                  { user: 'Sarah Johnson', action: 'submitted new report', time: '2 min ago', color: 'primary' },
-                  { user: 'Municipality Staff', action: 'resolved infrastructure issue', time: '15 min ago', color: 'environment' },
-                  { user: 'System', action: 'distributed reward points', time: '1 hour ago', color: 'reward' },
-                  { user: 'David Wilson', action: 'rated service 5 stars', time: '3 hours ago', color: 'secondary' },
-                ].map((activity, index) => (
+          {/* Recent Activity */}
+          <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6 animate-slide-up">
+            <h3 className="text-lg font-semibold text-neutral-800 mb-4">Recent Activity</h3>
+            <div className="space-y-4">
+              {recentActivity.length > 0 ? (
+                recentActivity.map((activity, index) => (
                   <div key={index} className="flex items-start gap-3 p-3 hover:bg-neutral-50 rounded-lg transition-colors">
                     <div className={`w-8 h-8 rounded-full bg-${activity.color}-100 flex items-center justify-center`}>
                       <UserCheck className={`w-4 h-4 text-${activity.color}-600`} />
@@ -563,71 +716,89 @@ const MunicipalityDashboard = () => {
                       <p className="text-xs text-neutral-500 mt-1">{activity.time}</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Performance Metrics */}
-            <div className="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-6 text-white animate-scale-in">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Performance Score</h3>
-                <Star className="w-5 h-5 text-reward-300 animate-reward-glow" />
-              </div>
-              <div className="text-center mb-4">
-                <div className="text-5xl font-bold mb-2">8.7</div>
-                <p className="text-primary-100">Out of 10</p>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Response Time</span>
-                    <span>92%</span>
-                  </div>
-                  <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
-                    <div className="h-full bg-white rounded-full" style={{ width: '92%' }}></div>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-6">
+                  <Activity className="w-10 h-10 text-neutral-300 mx-auto mb-2" />
+                  <p className="text-sm text-neutral-500">No recent activity</p>
                 </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Citizen Satisfaction</span>
-                    <span>88%</span>
-                  </div>
-                  <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
-                    <div className="h-full bg-white rounded-full" style={{ width: '88%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Issue Resolution</span>
-                    <span>95%</span>
-                  </div>
-                  <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
-                    <div className="h-full bg-white rounded-full" style={{ width: '95%' }}></div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* Footer Info */}
-        <div className="bg-gradient-to-r from-neutral-50 to-neutral-100 border border-neutral-200 rounded-xl p-6 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-semibold text-neutral-800">Need Help?</h4>
-              <p className="text-sm text-neutral-600 mt-1">Contact our support team or check our documentation</p>
+          {/* Performance Metrics */}
+          <div className="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-6 text-white animate-scale-in">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Performance Score</h3>
+              <Star className="w-5 h-5 text-reward-300 animate-reward-glow" />
             </div>
-            <div className="flex items-center gap-3">
-              <button className="px-4 py-2 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors text-sm">
-                View Documentation
-              </button>
-              <button className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm">
-                Contact Support
-              </button>
+            <div className="text-center mb-4">
+              <div className="text-5xl font-bold mb-2">{calculatePerformanceScore()}</div>
+              <p className="text-primary-100">Out of 10</p>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Validation Rate</span>
+                  <span>{stats ? `${Math.round((stats.validatedReports / stats.totalReports) * 100)}%` : '92%'}</span>
+                </div>
+                <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-white rounded-full" 
+                    style={{ width: `${stats ? Math.round((stats.validatedReports / stats.totalReports) * 100) : 92}%` }}
+                  ></div>
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Resolution Rate</span>
+                  <span>{stats ? `${stats.resolutionRate}%` : '88%'}</span>
+                </div>
+                <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-white rounded-full" 
+                    style={{ width: `${stats ? stats.resolutionRate : 88}%` }}
+                  ></div>
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Citizen Engagement</span>
+                  <span>{stats && stats.totalReports > 0 ? `${Math.round((stats.totalPoints / stats.totalReports) * 10)}%` : '95%'}</span>
+                </div>
+                <div className="h-2 bg-primary-400 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-white rounded-full" 
+                    style={{ width: `${stats && stats.totalReports > 0 ? Math.round((stats.totalPoints / stats.totalReports) * 10) : 95}%` }}
+                  ></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Footer Info */}
+      <div className="bg-gradient-to-r from-neutral-50 to-neutral-100 border border-neutral-200 rounded-xl p-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-semibold text-neutral-800">Dashboard Summary</h4>
+            <p className="text-sm text-neutral-600 mt-1">
+              Showing data from {reports.length} reports • {stats?.pendingReports || 0} pending actions • 
+              Last updated: {reports.length > 0 ? formatDate(reports[0].updatedAt) : 'Never'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="px-4 py-2 bg-white border border-neutral-300 rounded-lg hover:bg-neutral-50 transition-colors text-sm">
+              Generate Report
+            </button>
+            <button className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm">
+              Export Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

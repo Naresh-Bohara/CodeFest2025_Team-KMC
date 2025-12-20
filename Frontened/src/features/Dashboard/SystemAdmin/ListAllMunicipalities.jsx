@@ -31,6 +31,7 @@ import { useDeactivateMunicipalityMutation, useGetAllMunicipalitiesQuery } from 
 const ListAllMunicipalities = () => {
   const navigate = useNavigate();
   const { data: municipalitiesData, isLoading, error, refetch } = useGetAllMunicipalitiesQuery();
+  console.log(municipalitiesData)
   const [deactivateMunicipality, { isLoading: isDeleting }] =useDeactivateMunicipalityMutation();  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState(null);
