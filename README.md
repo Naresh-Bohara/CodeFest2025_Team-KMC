@@ -42,6 +42,6 @@ The platform aims to improve civic management while keeping users engaged and re
 - **File Upload:** Cloudinary  
 - **Real-time Updates:** Socket.IO  
 - **Validation:** Joi  
-- **Email Notifications:** Nodemailer  
+- **Email Notifications:** Nodemailer   
 
 Built with ❤️ by Team KMC for cleaner, smarter cities 🏙️

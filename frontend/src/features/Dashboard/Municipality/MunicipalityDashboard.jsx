@@ -848,6 +848,6 @@ const MunicipalityDashboard = () => {
       </div>
     </div>
   );
-};
+};  
 
 export default MunicipalityDashboard;
