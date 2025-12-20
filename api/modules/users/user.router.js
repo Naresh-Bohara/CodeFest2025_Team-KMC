@@ -11,29 +11,32 @@ import { checkLogin } from "../../middlewares/auth.middleware.js";
 import { Require } from "../../middlewares/rbac.middleware.js";
 import { profileImageUpload } from "../../config/upload.config.js"; 
 import userCtrl from "./user.controller.js";
+import Joi from "joi";
 
 const userRouter = Router();
 
 // SYSTEM ADMIN - Get all users with filtering
-userRouter.get("/", checkLogin, Require.SysAdmin, queryValidator(userFilterDTO), userCtrl.getAllUsers);
+userRouter.get("/", checkLogin, Require.SystemAdmin, queryValidator(userFilterDTO), userCtrl.getAllUsers);
 
 // SYSTEM ADMIN - Get user statistics for dashboard
-userRouter.get("/stats/dashboard", checkLogin, Require.SysAdmin, queryValidator(userStatsDTO), userCtrl.getDashboardStats);
+userRouter.get("/stats/dashboard", checkLogin, Require.SystemAdmin, queryValidator(userStatsDTO), userCtrl.getDashboardStats);
 
 // SYSTEM ADMIN - Get user by ID
-userRouter.get("/:id", checkLogin, Require.SysAdmin, paramsValidator(userIdDTO), userCtrl.getUserById);
+userRouter.get("/:id", checkLogin, Require.SystemAdmin, paramsValidator(userIdDTO), userCtrl.getUserById);
 
 // SYSTEM ADMIN - Create new user (citizen, staff, admin, sponsor)
-userRouter.post("/", checkLogin, Require.SysAdmin, profileImageUpload, bodyValidator(userCreateDTO), userCtrl.createUser);
+userRouter.post("/", checkLogin, Require.SystemAdmin, profileImageUpload, bodyValidator(userCreateDTO), userCtrl.createUser);
 
 // SYSTEM ADMIN - Update user by ID
-userRouter.put("/:id", checkLogin, Require.SysAdmin, profileImageUpload, bodyValidator(userUpdateDTO), userCtrl.updateUser);
+userRouter.put("/:id", checkLogin, Require.SystemAdmin, profileImageUpload, paramsValidator(userIdDTO), bodyValidator(userUpdateDTO), userCtrl.updateUser);
 
 // SYSTEM ADMIN - Delete user by ID
-userRouter.delete("/:id", checkLogin, Require.SysAdmin, paramsValidator(userIdDTO), userCtrl.deleteUser);
+userRouter.delete("/:id", checkLogin, Require.SystemAdmin, paramsValidator(userIdDTO), userCtrl.deleteUser);
 
 // SYSTEM ADMIN - Change user status (activate/deactivate)
-userRouter.put("/:id/status", checkLogin, Require.SysAdmin, bodyValidator({ status: Joi.string().valid('active', 'inactive', 'suspended').required() }), userCtrl.changeUserStatus);
+userRouter.put("/:id/status", checkLogin, Require.SystemAdmin, bodyValidator(Joi.object({ 
+  status: Joi.string().valid('active', 'inactive', 'suspended').required() 
+})), userCtrl.changeUserStatus);
 
 // MUNICIPALITY ADMIN - Get users in their municipality
 userRouter.get("/municipality/users", checkLogin, Require.MunicipalityAdmin, queryValidator(userFilterDTO), userCtrl.getMunicipalityUsers);
