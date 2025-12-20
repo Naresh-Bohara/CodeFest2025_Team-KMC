@@ -19,7 +19,7 @@ export const createDefaultAdmin = async () => {
       password: hashedPass,
       role: "system_admin",
       status: "active", 
-      profileImage: "", 
+      profileImage: "",   
     });
 
     console.log("Default Admin Created Successfully");
