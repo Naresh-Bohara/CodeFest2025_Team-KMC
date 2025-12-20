@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -14,11 +14,15 @@ import {
   MapPin,
   Home,
   Globe,
+  Building,
+  ChevronDown,
+  Search,
+  Map,
+  Users
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRegisterMutation } from "../../../store/api/authApi";
 import { ROUTES } from "../../../utils/constants/routes";
-
 import {
   TextInput,
   PasswordInput,
@@ -29,7 +33,7 @@ import {
 import AuthLayout from "../../../components/templates/AuthLayout/AuthLayout";
 import { useGetAllMunicipalitiesQuery } from "../../../store/api/Municipality";
 
-// Validation Schema - FIXED: Made location required
+// Validation Schema
 const registerSchema = z
   .object({
     name: z
@@ -51,6 +55,7 @@ const registerSchema = z
       .min(1, "Please enter ward number")
       .regex(/^\d+$/, "Ward number must be numeric"),
     municipalityId: z.string().optional(),
+    municipalityName: z.string().optional(), // For display
     profileImage: z.any().optional(),
     location: z
       .object({
@@ -78,18 +83,31 @@ const RegisterPage = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [register, { isLoading }] = useRegisterMutation();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showMunicipalityDropdown, setShowMunicipalityDropdown] = useState(false);
+
+  // Fetch municipalities
+  const { 
+    data: municipalityResponse, 
+    isLoading: isLoadingMunicipalities,
+    isError: isErrorMunicipalities 
+  } = useGetAllMunicipalitiesQuery();
+
+  const municipalities = municipalityResponse?.data || [];
+  const totalMunicipalities = municipalityResponse?.pagination?.total || 0;
 
   const {
     control,
     handleSubmit,
     watch,
     trigger,
-    formState: { errors, isValid },
     setValue,
+    formState: { errors },
   } = useForm({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       municipalityId: "",
+      municipalityName: "",
       location: null,
       name: "",
       email: "",
@@ -100,13 +118,33 @@ const RegisterPage = () => {
       ward: "",
       profileImage: undefined,
     },
-    mode: "onChange", // Changed to validate on change
+    mode: "onChange",
   });
 
-  const password = watch("password");
-  const municipalityId = watch("municipalityId");
+  const selectedMunicipalityId = watch("municipalityId");
+  const selectedMunicipalityName = watch("municipalityName");
   const locationData = watch("location");
-  const allValues = watch(); // Watch all form values
+  const allValues = watch();
+
+  // Filter municipalities based on search
+  const filteredMunicipalities = municipalities.filter(muni =>
+    muni.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    muni.location?.city?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Get selected municipality details
+  const selectedMunicipality = municipalities.find(
+    muni => muni._id === selectedMunicipalityId
+  );
+
+  // Set default municipality if only one exists
+  useEffect(() => {
+    if (municipalities.length === 1 && !selectedMunicipalityId) {
+      const muni = municipalities[0];
+      setValue("municipalityId", muni._id);
+      setValue("municipalityName", muni.name);
+    }
+  }, [municipalities, selectedMunicipalityId, setValue]);
 
   const steps = [
     { number: 1, title: "Personal", subtitle: "Basic information", icon: "👤" },
@@ -122,12 +160,9 @@ const RegisterPage = () => {
     };
 
     const isValid = await trigger(fields[step]);
-    console.log(`Step ${step} validation result:`, isValid);
-    
     if (isValid) {
       setStep((prev) => Math.min(prev + 1, 3));
     } else {
-      // Show error toast for current step validation
       toast.error(`Please fill all required fields correctly in ${steps[step-1]?.title || 'this'} step`);
     }
   };
@@ -136,10 +171,29 @@ const RegisterPage = () => {
     setStep((prev) => Math.max(prev - 1, 1));
   };
 
-  const onSubmit = async (data) => {
-    console.log("Form data before submission:", data);
+  const handleMunicipalitySelect = (municipality) => {
+    setValue("municipalityId", municipality._id);
+    setValue("municipalityName", municipality.name);
+    setShowMunicipalityDropdown(false);
+    setSearchQuery("");
     
-    // Validate all fields one more time before submission
+    // Optional: Auto-fill location if municipality has coordinates
+    if (municipality.location?.coordinates) {
+      const { lat, lng } = municipality.location.coordinates;
+      setValue("location", {
+        latitude: lat,
+        longitude: lng,
+        address: `${municipality.name}, ${municipality.location?.city || ''}`
+      });
+    }
+  };
+
+  const handleClearMunicipality = () => {
+    setValue("municipalityId", "");
+    setValue("municipalityName", "");
+  };
+
+  const onSubmit = async (data) => {
     const isValid = await trigger();
     if (!isValid) {
       toast.error("Please fill all required fields correctly.");
@@ -149,13 +203,11 @@ const RegisterPage = () => {
     try {
       const formData = new FormData();
 
-      // Add all data fields including location
       Object.keys(data).forEach((key) => {
-        if (key !== "confirmPassword") {
+        if (key !== "confirmPassword" && key !== "municipalityName") {
           const value = data[key];
           if (value !== undefined && value !== null && value !== "") {
             if (key === "location" && value) {
-              // Convert location object to JSON string
               formData.append(key, JSON.stringify(value));
             } else if (key === "profileImage" && value instanceof File) {
               formData.append(key, value);
@@ -166,21 +218,11 @@ const RegisterPage = () => {
         }
       });
 
-      // Add citizen role automatically
       formData.append("role", "citizen");
 
-      console.log("📤 Submitting registration data:");
-      for (let [key, value] of formData.entries()) {
-        console.log(`${key}:`, value);
-      }
-
-      // Submit to backend
       const result = await register(formData).unwrap();
-
-      // Store email for activation page
       localStorage.setItem("pending_activation_email", data.email);
       
-      // Show success message
       toast.success(
         <div className="flex flex-col">
           <span className="font-semibold">✅ Registration Successful!</span>
@@ -188,7 +230,6 @@ const RegisterPage = () => {
         </div>
       );
 
-      // Navigate to activation page
       navigate(ROUTES.ACTIVATE_ACCOUNT, {
         replace: true,
         state: { email: data.email }
@@ -196,7 +237,6 @@ const RegisterPage = () => {
 
     } catch (error) {
       console.error("Registration error:", error);
-
       if (error.data?.errors) {
         error.data.errors.forEach((err) => {
           if (err.path) {
@@ -209,13 +249,6 @@ const RegisterPage = () => {
         );
       }
     }
-  };
-
-  // Debug function to check form state
-  const debugFormState = () => {
-    console.log("Form errors:", errors);
-    console.log("Form values:", allValues);
-    console.log("Is form valid?", isValid);
   };
 
   const renderStep = () => {
@@ -289,7 +322,7 @@ const RegisterPage = () => {
             >
               <div className="flex items-start">
                 <div className="bg-primary-500 text-white p-2 rounded-lg mr-4">
-                  <CheckCircle size={20} />
+                  <Users size={20} />
                 </div>
                 <div>
                   <h4 className="font-semibold text-primary-900 mb-1">
@@ -320,6 +353,7 @@ const RegisterPage = () => {
         );
 
       case 2:
+        const password = watch("password");
         const passwordRequirements = [
           { text: "At least 6 characters", check: password?.length >= 6 },
           { text: "One uppercase letter", check: /[A-Z]/.test(password) },
@@ -454,24 +488,203 @@ const RegisterPage = () => {
                 </p>
               </div>
 
-              <div>
-                <TextInput
-                  control={control}
+              {/* Municipality Dropdown */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Municipality *
+                </label>
+                
+                <Controller
                   name="municipalityId"
-                  label="Municipality ID (Optional)"
-                  placeholder="e.g., KTM-01"
-                  icon="home"
-                  animationDelay={2}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  {municipalityId ? (
-                    <span className="text-green-600">
-                      ✓ Municipality ID will be saved
-                    </span>
-                  ) : (
-                    "Leave blank if unknown"
+                  control={control}
+                  render={({ field }) => (
+                    <div className="relative">
+                      {/* Selected Municipality Display */}
+                      <button
+                        type="button"
+                        onClick={() => setShowMunicipalityDropdown(!showMunicipalityDropdown)}
+                        className={`w-full flex items-center justify-between px-4 py-3.5 border rounded-xl text-left transition-all duration-200 ${
+                          selectedMunicipalityName
+                            ? "border-primary-300 bg-primary-50"
+                            : "border-gray-300 hover:border-gray-400"
+                        } ${errors.municipalityId ? "border-red-500" : ""}`}
+                      >
+                        <div className="flex items-center">
+                          <Building className="w-5 h-5 text-gray-500 mr-3" />
+                          <div className="flex-1">
+                            {selectedMunicipalityName ? (
+                              <>
+                                <div className="font-medium text-gray-900">
+                                  {selectedMunicipalityName}
+                                </div>
+                                {selectedMunicipality && (
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    {selectedMunicipality.location?.city} • {selectedMunicipality.contactPhone}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-500">
+                                Select your municipality
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {selectedMunicipalityName && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleClearMunicipality();
+                              }}
+                              className="p-1 hover:bg-gray-100 rounded-full"
+                            >
+                              <ChevronDown className="w-4 h-4 text-gray-400 rotate-90" />
+                            </button>
+                          )}
+                          <ChevronDown 
+                            className={`w-5 h-5 text-gray-400 transition-transform ${
+                              showMunicipalityDropdown ? "rotate-180" : ""
+                            }`}
+                          />
+                        </div>
+                      </button>
+
+                      {/* Dropdown Menu */}
+                      {showMunicipalityDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 max-h-80 overflow-hidden">
+                          {/* Search Bar */}
+                          <div className="p-3 border-b border-gray-100">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                              <input
+                                type="text"
+                                placeholder="Search municipalities..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Municipality List */}
+                          <div className="overflow-y-auto max-h-64">
+                            {isLoadingMunicipalities ? (
+                              <div className="p-4 text-center">
+                                <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+                                <p className="text-sm text-gray-500 mt-2">Loading municipalities...</p>
+                              </div>
+                            ) : isErrorMunicipalities ? (
+                              <div className="p-4 text-center text-red-500">
+                                Failed to load municipalities
+                              </div>
+                            ) : filteredMunicipalities.length === 0 ? (
+                              <div className="p-4 text-center text-gray-500">
+                                No municipalities found
+                              </div>
+                            ) : (
+                              <>
+                                {/* Recently Selected (if any) */}
+                                {selectedMunicipality && (
+                                  <div className="p-2">
+                                    <div className="text-xs font-medium text-gray-500 px-3 py-1">
+                                      Currently Selected
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMunicipalitySelect(selectedMunicipality)}
+                                      className="w-full flex items-center p-3 hover:bg-primary-50 rounded-lg border border-primary-200 bg-primary-25"
+                                    >
+                                      <div className="flex-1 text-left">
+                                        <div className="font-medium text-primary-700">
+                                          {selectedMunicipality.name}
+                                        </div>
+                                        <div className="text-xs text-primary-600 mt-0.5">
+                                          {selectedMunicipality.location?.city} • Active
+                                        </div>
+                                      </div>
+                                      <CheckCircle className="w-5 h-5 text-primary-600" />
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* All Municipalities */}
+                                <div className="p-2">
+                                  <div className="text-xs font-medium text-gray-500 px-3 py-1">
+                                    Available Municipalities ({totalMunicipalities})
+                                  </div>
+                                  {filteredMunicipalities
+                                    .filter(muni => muni._id !== selectedMunicipalityId)
+                                    .map((municipality) => (
+                                      <button
+                                        key={municipality._id}
+                                        type="button"
+                                        onClick={() => handleMunicipalitySelect(municipality)}
+                                        className="w-full flex items-start p-3 hover:bg-gray-50 rounded-lg transition-colors border-b border-gray-100 last:border-0"
+                                      >
+                                        <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-50 rounded-lg flex items-center justify-center mr-3">
+                                          <Building className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                          <div className="font-medium text-gray-900">
+                                            {municipality.name}
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            <div className="flex items-center">
+                                              <MapPin className="w-3 h-3 mr-1" />
+                                              {municipality.location?.city || "N/A"}
+                                            </div>
+                                            <div className="flex items-center mt-1">
+                                              <Home className="w-3 h-3 mr-1" />
+                                              Contact: {municipality.contactPhone || "N/A"}
+                                            </div>
+                                          </div>
+                                          {municipality.settings?.citizenRewards && (
+                                            <div className="mt-2">
+                                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                                <CheckCircle className="w-3 h-3 mr-1" />
+                                                Citizen Rewards Active
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </button>
+                                    ))
+                                  }
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Footer */}
+                          <div className="p-3 border-t border-gray-100 bg-gray-50">
+                            <p className="text-xs text-gray-500 text-center">
+                              Select your local municipality for better service
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </p>
+                />
+                {errors.municipalityId && (
+                  <p className="mt-1 text-sm text-red-600">{errors.municipalityId.message}</p>
+                )}
+                {selectedMunicipality && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Map className="w-4 h-4 mr-2 text-blue-500" />
+                      <span>Location: {selectedMunicipality.location?.city || "N/A"}</span>
+                    </div>
+                    {selectedMunicipality.settings && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                        <span>Point Value: {selectedMunicipality.settings.pointValue || 5} points per report</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -635,15 +848,6 @@ const RegisterPage = () => {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-2">
           <AnimatePresence mode="wait">{renderStep()}</AnimatePresence>
 
-          {/* Debug button - remove in production */}
-          {/* <button
-            type="button"
-            onClick={debugFormState}
-            className="text-xs p-2 bg-gray-100 rounded"
-          >
-            Debug Form State
-          </button> */}
-
           {/* Navigation Buttons */}
           <div className="flex justify-between items-center pt-8 mt-8 border-t border-gray-100">
             <div>
@@ -688,7 +892,6 @@ const RegisterPage = () => {
                            transition-all duration-200 shadow-md disabled:opacity-50 disabled:cursor-not-allowed
                            relative overflow-hidden group"
                 >
-                  {/* Animated background effect */}
                   <motion.div
                     className="absolute inset-0 bg-gradient-to-r from-primary-600 to-primary-700 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                     initial={false}

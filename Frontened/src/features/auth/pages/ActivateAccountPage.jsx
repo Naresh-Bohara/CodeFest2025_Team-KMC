@@ -7,6 +7,8 @@ import { useActivateUserMutation, useResendOtpMutation } from '../../../store/ap
 import { ROUTES } from '../../../utils/constants/routes'
 import AuthLayout from '../../../components/templates/AuthLayout/AuthLayout'
 import { Input } from 'postcss'
+import Card from '../../../components/atoms/Card/Card'
+import Button from '../../../components/atoms/Button/Button'
 const OTP_DURATION = 300; // 5 minutes
 const RESEND_COOLDOWN = 30; // 30 seconds
 

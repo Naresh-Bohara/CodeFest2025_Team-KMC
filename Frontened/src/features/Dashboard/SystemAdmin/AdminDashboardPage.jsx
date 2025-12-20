@@ -18,45 +18,149 @@ import {
   RefreshCw,
   Eye,
   Edit,
-  MoreVertical
+  MoreVertical,
+  User,
+  Calendar,
+  AlertTriangle,
+  CheckSquare
 } from "lucide-react";
 import { ROUTES } from "../../../utils/constants/routes";
 import { useGetAllMunicipalitiesQuery } from "../../../store/api/Municipality";
 import Button from "../../../components/atoms/Button/Button";
+import { useGetReportsQuery } from "../../../store/api/reportApi";
 
 const AdminDashboardPage = () => {
   const navigate = useNavigate();
   const [timeRange, setTimeRange] = useState('month');
-  const { data, isLoading, isError, refetch } = useGetAllMunicipalitiesQuery();
-
-  const municipalities = data?.data || [];
-  const totalMunicipalities = data?.pagination?.total || municipalities.length;
-
-  // Mock data for dashboard stats
+  
+  // Fetch data
+  const { data: municipalitiesData, isLoading: loadingMunicipalities, isError: municipalitiesError, refetch: refetchMunicipalities } = useGetAllMunicipalitiesQuery();
+  const { data: reportsData, isLoading: loadingReports, isError: reportsError, refetch: refetchReports } = useGetReportsQuery();
+  
+  // Extract data from responses
+  const municipalities = municipalitiesData?.data || [];
+  const totalMunicipalities = municipalitiesData?.pagination?.total || municipalities.length;
+  
+  const reports = reportsData?.data || [];
+  const totalReports = reportsData?.pagination?.total || reports.length;
+  
+  // Calculate stats from real reports data
+  const resolvedReports = reports.filter(report => report.status === 'resolved').length;
+  const pendingReports = reports.filter(report => report.status === 'pending').length;
+  const verifiedReports = reports.filter(report => 
+    report.validationInfo?.locationValidated === true
+  ).length;
+  
+  // Calculate categories from reports
+  const reportCategories = reports.reduce((acc, report) => {
+    const category = report.category || 'other';
+    acc[category] = (acc[category] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Calculate priorities from reports
+  const priorityCounts = reports.reduce((acc, report) => {
+    const priority = report.priority || 'medium';
+    acc[priority] = (acc[priority] || 0) + 1;
+    return acc;
+  }, {});
+  
+  // Calculate dashboard stats from real data
   const dashboardStats = {
-    totalReports: 12456,
-    resolvedReports: 8920,
-    pendingReports: 1245,
-    averageResolutionTime: '2.5',
-    activeCitizens: 4567,
+    totalReports: totalReports,
+    resolvedReports: resolvedReports,
+    pendingReports: pendingReports,
+    verifiedReports: verifiedReports,
+    activeMunicipalities: municipalities.filter(m => m.isActive !== false).length,
+    totalCitizens: 4567, // You might need to fetch this from another API
     newUsersToday: 125
   };
 
   const performanceMetrics = [
-    { label: 'Response Rate', value: '92%', change: '+2.3%', positive: true },
-    { label: 'Avg. Resolution Time', value: '2.1 days', change: '-0.4 days', positive: true },
-    { label: 'Citizen Satisfaction', value: '4.7/5', change: '+0.2', positive: true },
-    { label: 'Issues Reported', value: '1,245', change: '+15%', positive: false }
+    { 
+      label: 'Response Rate', 
+      value: `${resolvedReports > 0 ? Math.round((resolvedReports / totalReports) * 100) : 0}%`, 
+      change: '+2.3%', 
+      positive: true 
+    },
+    { 
+      label: 'Avg. Severity', 
+      value: reports.length > 0 
+        ? reports.reduce((sum, r) => sum + (r.severity === 'high' ? 3 : r.severity === 'medium' ? 2 : 1), 0) / reports.length 
+        : 0, 
+      change: '+0.2', 
+      positive: false 
+    },
+    { 
+      label: 'Verification Rate', 
+      value: `${verifiedReports > 0 ? Math.round((verifiedReports / totalReports) * 100) : 0}%`, 
+      change: '+5%', 
+      positive: true 
+    },
+    { 
+      label: 'Active Issues', 
+      value: pendingReports, 
+      change: '+15%', 
+      positive: false 
+    }
   ];
 
-  const recentActivities = [
-    { id: 1, action: 'New municipality registered', entity: 'Kathmandu Metro', time: '10 min ago', icon: <Building className="w-4 h-4" /> },
-    { id: 2, action: 'Critical issue resolved', entity: 'Road Repair #245', time: '1 hour ago', icon: <CheckCircle className="w-4 h-4" /> },
-    { id: 3, action: 'New admin joined', entity: 'John Doe', time: '2 hours ago', icon: <Users className="w-4 h-4" /> },
-    { id: 4, action: 'System update completed', entity: 'Version 2.1', time: '5 hours ago', icon: <Shield className="w-4 h-4" /> }
-  ];
+  // Get recent activities from actual reports
+  const recentActivities = reports.slice(0, 4).map(report => ({
+    id: report._id,
+    action: report.title,
+    entity: report.citizenId?.name || 'Anonymous',
+    time: formatTimeAgo(report.createdAt),
+    icon: <AlertCircle className="w-4 h-4" />,
+    status: report.status,
+    category: report.category
+  }));
 
-  if (isLoading) {
+  // Helper function to format time ago
+  function formatTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  // Helper function to get category icon
+  const getCategoryIcon = (category) => {
+    switch(category) {
+      case 'road': return '🛣️';
+      case 'water': return '💧';
+      case 'electricity': return '⚡';
+      case 'garbage': return '🗑️';
+      case 'sanitation': return '🚽';
+      default: return '📋';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'resolved': return 'bg-green-100 text-green-800';
+      case 'in-progress': return 'bg-blue-100 text-blue-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getPriorityColor = (priority) => {
+    switch(priority) {
+      case 'high': return 'bg-red-100 text-red-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  if (loadingMunicipalities || loadingReports) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -64,13 +168,13 @@ const AdminDashboardPage = () => {
     );
   }
 
-  if (isError) {
+  if (municipalitiesError || reportsError) {
     return (
       <div className="text-center py-12">
         <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Failed to load data</h3>
         <p className="text-gray-600 mb-4">Please check your connection and try again</p>
-        <Button variant="primary" onClick={refetch}>
+        <Button variant="primary" onClick={() => { refetchMunicipalities(); refetchReports(); }}>
           <RefreshCw className="w-4 h-4 mr-2" />
           Retry
         </Button>
@@ -94,11 +198,11 @@ const AdminDashboardPage = () => {
         <div className="flex gap-3">
           <Button
             variant="outline"
-            onClick={() => window.location.reload()}
+            onClick={() => { refetchMunicipalities(); refetchReports(); }}
             className="flex items-center gap-2"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh
+            Refresh Data
           </Button>
           <Button
             variant="primary"
@@ -111,40 +215,39 @@ const AdminDashboardPage = () => {
         </div>
       </motion.div>
 
-     
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           {
             title: 'Total Municipalities',
             value: totalMunicipalities,
-            change: '+3 this month',
+            change: `${dashboardStats.activeMunicipalities} active`,
             icon: <Building className="w-6 h-6" />,
             color: 'bg-blue-500',
             link: ROUTES.SYSTEM_ADMIN.MUNICIPALITIES
           },
           {
-            title: 'Active Citizens',
-            value: dashboardStats.activeCitizens.toLocaleString(),
-            change: `+${dashboardStats.newUsersToday} today`,
-            icon: <Users className="w-6 h-6" />,
-            color: 'bg-green-500',
-            link: '#'
-          },
-          {
-            title: 'Issues Reported',
-            value: dashboardStats.totalReports.toLocaleString(),
-            change: `${dashboardStats.resolvedReports.toLocaleString()} resolved`,
+            title: 'Total Reports',
+            value: dashboardStats.totalReports,
+            change: `${dashboardStats.resolvedReports} resolved`,
             icon: <AlertCircle className="w-6 h-6" />,
             color: 'bg-orange-500',
             link: '#'
           },
           {
-            title: 'Avg. Resolution Time',
-            value: `${dashboardStats.averageResolutionTime} days`,
-            change: '-0.3 days from last month',
+            title: 'Pending Reports',
+            value: dashboardStats.pendingReports,
+            change: `${dashboardStats.verifiedReports} verified`,
             icon: <Clock className="w-6 h-6" />,
-            color: 'bg-purple-500',
+            color: 'bg-yellow-500',
+            link: '#'
+          },
+          {
+            title: 'Active Citizens',
+            value: dashboardStats.totalCitizens.toLocaleString(),
+            change: `+${dashboardStats.newUsersToday} today`,
+            icon: <Users className="w-6 h-6" />,
+            color: 'bg-green-500',
             link: '#'
           }
         ].map((stat, index) => (
@@ -169,17 +272,26 @@ const AdminDashboardPage = () => {
         ))}
       </div>
 
-      {/* Performance Metrics */}
+      {/* Performance Metrics & Reports */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Performance Cards */}
+        {/* Performance Metrics & Recent Reports */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Performance Metrics */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Performance Metrics</h3>
-                <p className="text-sm text-gray-500">Key indicators for {timeRange}</p>
+                <p className="text-sm text-gray-500">Based on real-time report data</p>
               </div>
-              <Filter className="w-5 h-5 text-gray-400" />
+              <select 
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="year">This Year</option>
+              </select>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
@@ -191,11 +303,21 @@ const AdminDashboardPage = () => {
                       {metric.change}
                     </span>
                   </div>
-                  <div className="text-2xl font-bold text-gray-900">{metric.value}</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {typeof metric.value === 'number' && metric.value < 10 
+                      ? metric.value.toFixed(1) 
+                      : metric.value}
+                  </div>
                   <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div 
                       className={`h-full ${metric.positive ? 'bg-green-500' : 'bg-red-500'}`}
-                      style={{ width: `${Math.min(100, Math.abs(parseFloat(metric.change)) * 10)}%` }}
+                      style={{ 
+                        width: `${Math.min(100, 
+                          metric.label === 'Avg. Severity' ? (metric.value / 3) * 100 :
+                          metric.label === 'Active Issues' ? (metric.value / 100) * 100 :
+                          parseFloat(metric.value) || 50
+                        )}%` 
+                      }}
                     />
                   </div>
                 </div>
@@ -203,35 +325,80 @@ const AdminDashboardPage = () => {
             </div>
           </div>
 
-          {/* Recent Activities */}
+          {/* Recent Reports */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">Recent Activities</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Recent Reports</h3>
+                <p className="text-sm text-gray-500">{reports.length} total reports in system</p>
+              </div>
               <Button variant="ghost" size="sm" className="text-primary-600">
-                View All
+                View All Reports
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
             
             <div className="space-y-4">
-              {recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                  <div className="p-2 bg-primary-50 rounded-lg text-primary-600">
-                    {activity.icon}
+              {reports.slice(0, 5).map((report) => (
+                <div 
+                  key={report._id} 
+                  className="flex items-center gap-4 p-4 hover:bg-gray-50 rounded-lg transition-colors border"
+                >
+                  <div className="text-2xl">
+                    {getCategoryIcon(report.category)}
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{activity.action}</p>
-                    <p className="text-sm text-gray-500">{activity.entity}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-medium text-gray-900 truncate">
+                        {report.title}
+                      </h4>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(report.status)}`}>
+                        {report.status}
+                      </span>
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getPriorityColor(report.priority)}`}>
+                        {report.priority}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 truncate mb-1">
+                      {report.description}
+                    </p>
+                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        <span>{report.citizenId?.name || 'Anonymous'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Building className="w-3 h-3" />
+                        <span>{report.municipalityId?.name || 'Unknown Municipality'}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>{formatTimeAgo(report.createdAt)}</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-sm text-gray-400">{activity.time}</span>
+                  <button 
+                    onClick={() => navigate(`/dashboard/system-admin/reports/${report._id}`)}
+                    className="text-primary-600 hover:text-primary-700"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
                 </div>
               ))}
+              
+              {reports.length === 0 && (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">No reports found</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Municipality List */}
+        {/* Right Column - Municipality List & Quick Actions */}
         <div className="space-y-6">
+          {/* Municipality List */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -250,62 +417,75 @@ const AdminDashboardPage = () => {
             </div>
             
             <div className="space-y-3">
-              {municipalities.slice(0, 5).map((municipality) => (
-                <motion.div
-                  key={municipality._id}
-                  whileHover={{ scale: 1.01 }}
-                  className="group p-4 border rounded-lg hover:border-primary-300 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-gray-900 group-hover:text-primary-600">
-                          {municipality.name}
-                        </h4>
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                          municipality.isActive
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {municipality.isActive ? 'Active' : 'Inactive'}
-                        </span>
+              {municipalities.slice(0, 5).map((municipality) => {
+                const municipalityReports = reports.filter(
+                  report => report.municipalityId?._id === municipality._id
+                );
+                const resolvedMunicipalityReports = municipalityReports.filter(
+                  report => report.status === 'resolved'
+                );
+                
+                return (
+                  <motion.div
+                    key={municipality._id}
+                    whileHover={{ scale: 1.01 }}
+                    className="group p-4 border rounded-lg hover:border-primary-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-semibold text-gray-900 group-hover:text-primary-600">
+                            {municipality.name}
+                          </h4>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                            municipality.isActive !== false
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {municipality.isActive !== false ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                          <MapPin className="w-3 h-3" />
+                          <span>
+                            {municipality.location?.city || 'City'}, 
+                            {municipality.location?.province || 'Province'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>{municipalityReports.length} reports</span>
+                          <span>{resolvedMunicipalityReports.length} resolved</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-                        <MapPin className="w-3 h-3" />
-                        <span>{municipality.location?.city}, {municipality.location?.province}</span>
-                      </div>
-                      <p className="text-xs text-gray-400">
-                        Admin: {municipality.adminId?.name || 'Not assigned'}
-                      </p>
+                      
+                      <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded">
+                        <MoreVertical className="w-5 h-5 text-gray-400" />
+                      </button>
                     </div>
                     
-                    <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-100 rounded">
-                      <MoreVertical className="w-5 h-5 text-gray-400" />
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 pt-3 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate(`${ROUTES.SYSTEM_ADMIN.MUNICIPALITIES}/${municipality._id}`)}
-                      className="text-xs"
-                    >
-                      <Eye className="w-3 h-3 mr-1" />
-                      View
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate(`${ROUTES.SYSTEM_ADMIN.MUNICIPALITIES}/${municipality._id}/edit`)}
-                      className="text-xs"
-                    >
-                      <Edit className="w-3 h-3 mr-1" />
-                      Edit
-                    </Button>
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="flex items-center gap-3 pt-3 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`${ROUTES.SYSTEM_ADMIN.MUNICIPALITIES}/${municipality._id}`)}
+                        className="text-xs"
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        View
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`${ROUTES.SYSTEM_ADMIN.MUNICIPALITIES}/${municipality._id}/edit`)}
+                        className="text-xs"
+                      >
+                        <Edit className="w-3 h-3 mr-1" />
+                        Edit
+                      </Button>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
             
             {municipalities.length > 5 && (
@@ -320,6 +500,27 @@ const AdminDashboardPage = () => {
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Report Categories */}
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Report Categories</h3>
+            <div className="space-y-3">
+              {Object.entries(reportCategories).map(([category, count]) => (
+                <div key={category} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{getCategoryIcon(category)}</span>
+                    <span className="capitalize">{category}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{count}</span>
+                    <span className="text-sm text-gray-500">
+                      ({Math.round((count / totalReports) * 100)}%)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Quick Actions */}
@@ -346,8 +547,8 @@ const AdminDashboardPage = () => {
                 <div className="flex items-center gap-3">
                   <Users className="w-5 h-5" />
                   <div>
-                    <p className="font-medium">Manage Admins</p>
-                    <p className="text-sm text-primary-100">Add/remove system admins</p>
+                    <p className="font-medium">Manage Reports</p>
+                    <p className="text-sm text-primary-100">View and manage reports</p>
                   </div>
                 </div>
               </button>
@@ -359,8 +560,8 @@ const AdminDashboardPage = () => {
                 <div className="flex items-center gap-3">
                   <BarChart3 className="w-5 h-5" />
                   <div>
-                    <p className="font-medium">System Settings</p>
-                    <p className="text-sm text-primary-100">Configure platform settings</p>
+                    <p className="font-medium">System Analytics</p>
+                    <p className="text-sm text-primary-100">View detailed analytics</p>
                   </div>
                 </div>
               </button>

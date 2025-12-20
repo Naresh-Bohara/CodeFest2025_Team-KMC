@@ -7,8 +7,8 @@ import { protectedRoutes } from './routes/protectedRoutes'
 import { RouteRenderer } from './components/RouteRenderer'
 import CitizenDashboard from '../features/Dashboard/CitizenDashboard/CitizenDashboard'
 import DashboardLayout from '../components/templates/DashboardLayout/DashboardLayout'
-import UserProfile from '../features/Dashboard/CitizenDashboard/UserProfile'
-import ReportMapView from '../features/Dashboard/CitizenDashboard/ReportMapView'
+import UserProfile from '../features/Dashboard/CitizenDashboard/CitizenProfile'
+import ReportMapView from '../features/Dashboard/CitizenDashboard/MyReports'
 import AdminDashboardPage from '../features/Dashboard/SystemAdmin/AdminDashboardPage'
 import CreateMunicipality from '../features/Dashboard/SystemAdmin/CreateMunicipality'
 import ListAllMunicipalities from '../features/Dashboard/SystemAdmin/ListAllMunicipalities'
@@ -19,6 +19,10 @@ import SponsorForm from '../features/Dashboard/SystemAdmin/Sponsers/SponsorsForm
 import NotFoundPage from './pages/NotFound'
 import MunicipalityDashboard from '../features/Dashboard/Municipality/MunicipalityDashboard'
 import AdminProfile from '../features/Dashboard/SystemAdmin/AdminProfile'
+import CitizenProfile from '../features/Dashboard/CitizenDashboard/CitizenProfile'
+import CitizenReports from '../features/Dashboard/CitizenDashboard/MyReports'
+import ReportForm from '../features/Dashboard/CitizenDashboard/CreateReport'
+import Reports from '../features/Dashboard/Municipality/Reports'
 
 // Lazy load dashboard pages for better performance
 const DashboardLoader = ({ role }) => {
@@ -84,8 +88,9 @@ const Router = () => {
 >
   {/* Child Pages */}
   <Route index element={<CitizenDashboard/>} />
-  <Route path="profile" element={<UserProfile />} />
-  <Route path="reports" element={<ReportMapView/>}/>
+  <Route path="profile" element={<CitizenProfile />} />
+  <Route path="reports" element={<CitizenReports/>}/>
+  <Route path="new" element={<ReportForm/>}/>
 </Route>
 
 
@@ -104,6 +109,7 @@ const Router = () => {
 
       >
           <Route index element={<MunicipalityDashboard/>}/>
+          <Route path='reports' element={<Reports/>}/>
         </Route>
 
 

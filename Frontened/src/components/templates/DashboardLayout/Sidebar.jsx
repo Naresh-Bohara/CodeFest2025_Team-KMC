@@ -42,7 +42,7 @@ const menu = {
     { 
       label: "Profile", 
       icon: User, 
-      path: "/profile",
+      path: "/dashboard/citizen/profile",
       color: "community"
     },
   ],
