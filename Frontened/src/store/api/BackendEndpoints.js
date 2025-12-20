@@ -58,3 +58,18 @@ export const BackendSponsor = {
     getActiveMunicipalitySponsors: "/sponsors/municipality/",
     getGlobalActiveSponsors: "/sponsors/global/active"
 };
+
+export const BackendUser = {
+  // SYSTEM ADMIN
+  getUsers: "/users",
+  getUserById: "/users/",
+  createUser: "/users",
+  updateUser: "/users/",
+  deleteUser: "/users/",
+  changeUserStatus: "/users/",
+  getDashboardStats: "/users/stats/dashboard",
+
+  // MUNICIPALITY ADMIN
+  getMunicipalityUsers: "/users/municipality/users",
+  createMunicipalityStaff: "/users/municipality/staff",
+};

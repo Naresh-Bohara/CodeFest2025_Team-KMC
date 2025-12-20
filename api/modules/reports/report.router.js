@@ -42,4 +42,6 @@ reportRouter.put("/:id/assign", checkLogin, Require.AdminOnly, paramsValidator(r
 // STAFF - Get Assigned Reports
 reportRouter.get("/assigned/me", checkLogin, Require.StaffOnly, queryValidator(reportFilterDTO),reportCtrl.getAssignedReports);
 
+reportRouter.get("/stats/dashboard", checkLogin, Require.AdminOnly, reportCtrl.getDashboardCounts);
+
 export default reportRouter;

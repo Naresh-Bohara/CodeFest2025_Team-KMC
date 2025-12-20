@@ -1,326 +1,862 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { MapPin, Filter, Search, ArrowLeft, AlertTriangle, CheckCircle, Clock, User, ZoomIn, ZoomOut, Navigation, Maximize, Minimize, Loader2, RefreshCw, Layers } from 'lucide-react'
-import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { 
+  MapPin, Filter, Search, X, ArrowLeft, Eye, AlertTriangle, CheckCircle, 
+  Clock, User, Building, Calendar, Award, Shield, ZoomIn, ZoomOut, 
+  Navigation, Maximize, Minimize, Loader2, RefreshCw 
+} from 'lucide-react';
+import { useGetAllMunicipalitiesQuery, useGetMunicipalitiesQuery } from '../../../store/api/Municipality';
+import { useGetReportsQuery } from '../../../store/api/reportApi';
 
-const MAP_STYLE = 'https://demotiles.maplibre.org/style.json'
 
-// Sample municipalities - replace with your API data
-const MUNICIPALITIES = [
-  { _id: '1', name: 'Kathmandu', location: { coordinates: { lat: 27.708317, lng: 85.3205817 }}, boundaryBox: { minLat: 27.618317, maxLat: 27.798317, minLng: 85.2305817, maxLng: 85.4106 }},
-  { _id: '2', name: 'Pokhara', location: { coordinates: { lat: 28.2096, lng: 83.9856 }}, boundaryBox: { minLat: 28.1096, maxLat: 28.3096, minLng: 83.8856, maxLng: 84.0856 }}
-]
 
-// Sample reports - replace with your useGetReportsQuery
-const SAMPLE_REPORTS = [
-  { _id: '1', title: 'Road Damage', description: 'Pothole on main street', category: 'road', status: 'pending', priority: 'high', location: { coordinates: { lat: 27.7172, lng: 85.324 }, address: 'Thamel, Kathmandu', ward: '26' }, citizenId: { name: 'Ram Sharma' }, createdAt: '2025-12-19T10:30:00Z' },
-  { _id: '2', title: 'Street Light Issue', description: 'Lights not working', category: 'electricity', status: 'in_progress', priority: 'medium', location: { coordinates: { lat: 27.7089, lng: 85.3206 }, address: 'Lazimpat', ward: '2' }, citizenId: { name: 'Sita Rai' }, createdAt: '2025-12-18T14:20:00Z' },
-  { _id: '3', title: 'Water Leakage', description: 'Pipe leaking badly', category: 'water', status: 'resolved', priority: 'high', location: { coordinates: { lat: 27.7040, lng: 85.3180 }, address: 'Maitighar', ward: '3' }, citizenId: { name: 'Krishna Thapa' }, createdAt: '2025-12-17T09:15:00Z' }
-]
+const MAPTILER_KEY = "aNDo9TglgR1QMgzUYT1N";
 
-const STATUS_COLORS = { pending: '#eab308', assigned: '#3b82f6', in_progress: '#f97316', resolved: '#10b981' }
-const CATEGORY_ICONS = { road: '🚧', electricity: '⚡', water: '💧', sanitation: '🧹', garbage: '🗑️', emergency: '🚨' }
-
-const MapView = ({ navigate: nav }) => {
-  const mapRef = useRef(null)
-  const mapInstance = useRef(null)
-  const markers = useRef([])
+function MapView() {
+  const navigate = useNavigate();
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef([]);
   
-  const [loading, setLoading] = useState(true)
-  const [reports] = useState(SAMPLE_REPORTS)
-  const [selectedReport, setSelectedReport] = useState(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [categoryFilter, setCategoryFilter] = useState('all')
-  const [showBoundaries, setShowBoundaries] = useState(true)
-  const [zoom, setZoom] = useState(11)
+  // RTK Query for real data
+  const { 
+    data: municipalitiesData, 
+    isLoading: isLoadingMunicipalities, 
+    isError: isErrorMunicipalities,
+    refetch: refetchMunicipalities 
+  } = useGetAllMunicipalitiesQuery();
+  
+  const { 
+    data: reportsData, 
+    isLoading: isLoadingReports, 
+    isError: isErrorReports,
+    refetch: refetchReports 
+  } = useGetReportsQuery();
+  
+  console.log(municipalitiesData,reportsData)
+  // Extract real data from API responses
+  const municipalities = municipalitiesData?.data || [];
+  const reports = reportsData?.data || [];
+  
+  const [loading, setLoading] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(12);
 
-  const filteredReports = reports.filter(r => {
-    const search = searchQuery.toLowerCase()
-    const matchSearch = !search || r.title.toLowerCase().includes(search) || r.description.toLowerCase().includes(search)
-    const matchStatus = statusFilter === 'all' || r.status === statusFilter
-    const matchCategory = categoryFilter === 'all' || r.category === categoryFilter
-    return matchSearch && matchStatus && matchCategory
-  })
+  // Status options based on your report data structure
+  const statusOptions = [
+    { value: 'all', label: 'All Status', color: 'gray' },
+    { value: 'pending', label: 'Pending', color: 'yellow', icon: Clock },
+    { value: 'assigned', label: 'Assigned', color: 'blue', icon: User },
+    { value: 'in_progress', label: 'In Progress', color: 'orange', icon: AlertTriangle },
+    { value: 'resolved', label: 'Resolved', color: 'green', icon: CheckCircle }
+  ];
 
-  const getCoords = (report) => {
-    const c = report?.location?.coordinates
-    if (c?.lat && c?.lng) return [parseFloat(c.lng), parseFloat(c.lat)]
-    return null
-  }
+  // Category options based on your report data
+  const categories = [
+    { value: 'all', label: 'All Categories', icon: '📍' },
+    { value: 'road', label: 'Road Issues', icon: '🚧', color: 'orange' },
+    { value: 'electricity', label: 'Electricity', icon: '⚡', color: 'yellow' },
+    { value: 'water', label: 'Water Supply', icon: '💧', color: 'blue' },
+    { value: 'sanitation', label: 'Sanitation', icon: '🧹', color: 'brown' },
+    { value: 'safety', label: 'Safety', icon: '🛡️', color: 'red' },
+    { value: 'emergency', label: 'Emergency', icon: '🚨', color: 'red' },
+    { value: 'illegal_activity', label: 'Illegal Activity', icon: '🚫', color: 'purple' }
+  ];
 
-  useEffect(() => {
-    if (!mapRef.current) return
-
-    const map = new maplibregl.Map({
-      container: mapRef.current,
-      style: MAP_STYLE,
-      center: [85.324, 27.7172],
-      zoom: 11,
-      attributionControl: false
-    })
-
-    map.addControl(new maplibregl.NavigationControl(), 'top-right')
-    map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left')
-
-    map.on('load', () => {
-      setLoading(false)
-      addBoundaries(map)
-      updateMarkers(map, filteredReports, selectedReport)
-    })
-
-    map.on('zoom', () => setZoom(Math.round(map.getZoom() * 10) / 10))
-
-    mapInstance.current = map
-    return () => map.remove()
-  }, [])
-
-  useEffect(() => {
-    if (mapInstance.current && !loading) {
-      updateMarkers(mapInstance.current, filteredReports, selectedReport)
-    }
-  }, [filteredReports, selectedReport])
-
-  const addBoundaries = (map) => {
-    MUNICIPALITIES.forEach(muni => {
-      if (!muni.boundaryBox) return
-      
-      const { minLat, maxLat, minLng, maxLng } = muni.boundaryBox
-      const id = `muni-${muni._id}`
-      
-      map.addSource(id, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[[minLng, minLat], [maxLng, minLat], [maxLng, maxLat], [minLng, maxLat], [minLng, minLat]]]
-          }
-        }
-      })
-
-      map.addLayer({ id: `${id}-fill`, type: 'fill', source: id, paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.1 }})
-      map.addLayer({ id: `${id}-line`, type: 'line', source: id, paint: { 'line-color': '#3b82f6', 'line-width': 2, 'line-opacity': 0.8 }})
-      
-      map.addLayer({
-        id: `${id}-label`,
-        type: 'symbol',
-        source: id,
-        layout: { 'text-field': muni.name, 'text-size': 14, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'] },
-        paint: { 'text-color': '#1e40af', 'text-halo-color': '#fff', 'text-halo-width': 2 }
-      })
-
-      map.on('click', `${id}-fill`, () => {
-        map.flyTo({ center: [(minLng + maxLng) / 2, (minLat + maxLat) / 2], zoom: 12, duration: 1000 })
-      })
-    })
-  }
-
-  const updateMarkers = (map, reports, selected) => {
-    markers.current.forEach(m => m.remove())
-    markers.current = []
-
-    reports.forEach(report => {
-      const coords = getCoords(report)
-      if (!coords) return
-
-      const isSelected = selected?._id === report._id
-      const color = isSelected ? '#ef4444' : STATUS_COLORS[report.status] || '#6b7280'
-      const icon = CATEGORY_ICONS[report.category] || '📍'
-
-      const el = document.createElement('div')
-      el.style.cssText = `
-        width: ${isSelected ? 50 : 42}px;
-        height: ${isSelected ? 50 : 42}px;
-        border-radius: 50%;
-        background: ${color};
-        border: 3px solid white;
-        box-shadow: ${isSelected ? '0 8px 24px rgba(239,68,68,0.6)' : '0 4px 12px rgba(0,0,0,0.3)'};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.3s;
-        z-index: ${isSelected ? 1000 : 1};
-        font-size: ${isSelected ? 24 : 20}px;
-        ${isSelected ? 'animation: pulse 2s infinite;' : ''}
-      `
-      el.innerHTML = icon
-
-      const style = document.createElement('style')
-      style.textContent = '@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); }}'
-      document.head.appendChild(style)
-
-      const popup = createPopup(report, color, icon)
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat(coords)
-        .setPopup(popup)
-        .addTo(map)
-
-      el.onclick = (e) => {
-        e.stopPropagation()
-        setSelectedReport(report)
-        map.flyTo({ center: coords, zoom: 15, duration: 1000 })
-        setTimeout(() => marker.togglePopup(), 500)
-      }
-
-      markers.current.push(marker)
-    })
-  }
-
-  const createPopup = (report, color, icon) => {
-    const div = document.createElement('div')
-    div.style.cssText = 'min-width: 320px; padding: 20px; font-family: system-ui;'
+  // Filter reports based on actual data structure
+  const filteredReports = reports.filter(report => {
+    const matchesSearch = searchQuery === '' || 
+      report.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      report.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      report.location?.address?.toLowerCase().includes(searchQuery.toLowerCase());
     
-    const date = new Date(report.createdAt).toLocaleDateString('en-US', { 
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-    })
+    const matchesStatus = statusFilter === 'all' || report.status === statusFilter;
+    const matchesCategory = categoryFilter === 'all' || report.category === categoryFilter;
+    
+    return matchesSearch && matchesStatus && matchesCategory;
+  });
 
-    div.innerHTML = `
-      <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-        <div style="width: 48px; height: 48px; border-radius: 12px; background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 24px;">${icon}</div>
-        <div style="flex: 1;">
-          <h3 style="margin: 0 0 8px; font-size: 17px; font-weight: 700; color: #111;">${report.title}</h3>
-          <div style="display: flex; gap: 6px;">
-            <span style="background: ${color}20; color: ${color}; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">${report.status.toUpperCase()}</span>
-            <span style="background: ${report.priority === 'high' ? '#fee' : report.priority === 'medium' ? '#fffbeb' : '#f0fdf4'}; color: ${report.priority === 'high' ? '#dc2626' : report.priority === 'medium' ? '#ca8a04' : '#16a34a'}; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">${report.priority.toUpperCase()}</span>
+  // Get marker color by status
+  const getMarkerColor = (status) => {
+    switch (status) {
+      case 'resolved': return '#10b981'; // green
+      case 'in_progress': return '#f97316'; // orange
+      case 'assigned': return '#3b82f6'; // blue
+      case 'pending': return '#eab308'; // yellow
+      default: return '#6b7280'; // gray
+    }
+  };
+
+  // Get marker icon by category
+  const getMarkerIcon = (category) => {
+    const cat = categories.find(c => c.value === category);
+    return cat?.icon || '📍';
+  };
+
+  // Initialize map with useEffect [citation:4]
+  useEffect(() => {
+    if (isLoadingMunicipalities || isLoadingReports) return;
+    
+    if (!mapContainerRef.current) return;
+
+    const initializeMap = () => {
+      // Calculate center from real data or default to Nepal
+      const allReports = reports.filter(r => r.location?.coordinates);
+      const centerCoords = allReports.length > 0 
+        ? calculateCenter(allReports)
+        : [85.3240, 27.7172]; // Default Nepal center
+
+      const mapInstance = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style: `https://api.maptiler.com/maps/streets/style.json?key=${MAPTILER_KEY}`,
+        center: centerCoords,
+        zoom: allReports.length > 1 ? 10 : 14,
+        attributionControl: false
+      });
+
+      mapInstance.addControl(new maplibregl.NavigationControl(), 'top-right');
+      
+      mapInstance.addControl(new maplibregl.ScaleControl({
+        maxWidth: 100,
+        unit: 'metric'
+      }), 'bottom-left');
+
+      mapInstance.on('load', () => {
+        setLoading(false);
+        addMunicipalityBoundaries(mapInstance);
+        addReportMarkers(mapInstance);
+      });
+
+      mapInstance.on('zoom', () => {
+        setZoomLevel(mapInstance.getZoom());
+      });
+
+      mapInstance.on('error', (e) => {
+        console.error('Map error:', e.error);
+      });
+
+      mapInstanceRef.current = mapInstance;
+
+      return () => {
+        mapInstance.remove();
+      };
+    };
+
+    initializeMap();
+  }, [isLoadingMunicipalities, isLoadingReports, municipalities, reports]);
+
+  // Calculate center from reports with coordinates
+  const calculateCenter = (reports) => {
+    const reportsWithCoords = reports.filter(r => r.location?.coordinates?.lat && r.location?.coordinates?.lng);
+    
+    if (reportsWithCoords.length === 0) return [85.3240, 27.7172];
+    
+    const lngs = reportsWithCoords.map(r => r.location.coordinates.lng);
+    const lats = reportsWithCoords.map(r => r.location.coordinates.lat);
+    
+    const avgLng = lngs.reduce((a, b) => a + b, 0) / lngs.length;
+    const avgLat = lats.reduce((a, b) => a + b, 0) / lats.length;
+    
+    return [avgLng, avgLat];
+  };
+
+  // Add municipality boundaries based on real data
+  const addMunicipalityBoundaries = (map) => {
+    municipalities.forEach((municipality) => {
+      if (municipality.boundaryBox) {
+        const { minLat, maxLat, minLng, maxLng } = municipality.boundaryBox;
+        
+        const boundaryCoords = [
+          [minLng, minLat],
+          [maxLng, minLat],
+          [maxLng, maxLat],
+          [minLng, maxLat],
+          [minLng, minLat]
+        ];
+
+        // Add boundary as a polygon layer
+        map.addSource(`boundary-${municipality._id}`, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [boundaryCoords]
+            },
+            properties: {
+              name: municipality.name,
+              id: municipality._id
+            }
+          }
+        });
+
+        map.addLayer({
+          id: `boundary-layer-${municipality._id}`,
+          type: 'fill',
+          source: `boundary-${municipality._id}`,
+          paint: {
+            'fill-color': '#3b82f6',
+            'fill-opacity': 0.1,
+            'fill-outline-color': '#1d4ed8'
+          }
+        });
+
+        map.addLayer({
+          id: `boundary-outline-${municipality._id}`,
+          type: 'line',
+          source: `boundary-${municipality._id}`,
+          paint: {
+            'line-color': '#1d4ed8',
+            'line-width': 2,
+            'line-dasharray': [2, 2]
+          }
+        });
+
+        // Add municipality center marker if coordinates exist
+        if (municipality.location?.coordinates?.lat && municipality.location?.coordinates?.lng) {
+          const centerMarker = new maplibregl.Marker({ 
+            color: '#1d4ed8',
+            draggable: false
+          })
+            .setLngLat([
+              municipality.location.coordinates.lng,
+              municipality.location.coordinates.lat
+            ])
+            .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
+              <div style="min-width: 200px;">
+                <h3 style="margin:0 0 8px 0;font-size:14px;color:#1d4ed8;font-weight:bold;">
+                  ${municipality.name}
+                </h3>
+                <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+                  <strong>City:</strong> ${municipality.location.city || 'N/A'}
+                </p>
+                <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+                  <strong>Province:</strong> ${municipality.location.province || 'N/A'}
+                </p>
+                <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+                  <strong>Status:</strong> 
+                  <span style="color: ${municipality.isActive ? '#10b981' : '#ef4444'}; font-weight:bold;">
+                    ${municipality.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </p>
+                ${municipality.contactEmail ? `
+                  <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+                    <strong>Email:</strong> ${municipality.contactEmail}
+                  </p>
+                ` : ''}
+              </div>
+            `))
+            .addTo(map);
+        }
+      }
+    });
+  };
+
+  // Add report markers based on real data
+  const addReportMarkers = (map) => {
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
+
+    filteredReports.forEach((report) => {
+      if (!report.location?.coordinates?.lat || !report.location?.coordinates?.lng) return;
+
+      const coords = [
+        report.location.coordinates.lng,
+        report.location.coordinates.lat,
+      ];
+
+      const color = getMarkerColor(report.status);
+      const categoryIcon = getMarkerIcon(report.category);
+
+      const popupContent = `
+        <div style="min-width: 280px;">
+          <h3 style="margin:0 0 8px 0;font-size:14px;color:#dc2626;font-weight:bold;">
+            ${report.title}
+          </h3>
+          <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+            <strong>Location:</strong> ${report.location.address || 'No address provided'}
+          </p>
+          <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">
+            <strong>Municipality:</strong> ${report.municipalityId?.name || 'Unknown Municipality'}
+          </p>
+          <p style="margin:0 0 6px 0;font-size:12px;color:#6b7280;line-height:1.4;">
+            ${report.description}
+          </p>
+          <div style="display: flex; gap: 8px; margin: 8px 0;">
+            <span style="font-size:11px;padding:2px 8px;background:${color}20;color:${color};border-radius:4px;">
+              ${report.status}
+            </span>
+            <span style="font-size:11px;padding:2px 8px;background:#f3f4f6;border-radius:4px;">
+              ${report.category}
+            </span>
+            <span style="font-size:11px;padding:2px 8px;background:#f3f4f6;border-radius:4px;">
+              ${report.priority || 'Medium'} Priority
+            </span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <span style="font-size:11px;color:#9ca3af;">
+              Reported: ${new Date(report.createdAt).toLocaleDateString()}
+            </span>
+            ${report.citizenId?.name ? `
+              <span style="font-size:11px;color:#374151;">
+                By: ${report.citizenId.name}
+              </span>
+            ` : ''}
           </div>
         </div>
-      </div>
-      <p style="margin: 0 0 12px; color: #666; font-size: 14px; line-height: 1.5;">${report.description}</p>
-      <div style="background: #f9fafb; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <svg style="width: 16px; height: 16px; color: #666; margin-top: 2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          <div><div style="color: #111; font-size: 13px; font-weight: 500;">${report.location.address}</div>${report.location.ward ? `<div style="color: #666; font-size: 12px;">Ward ${report.location.ward}</div>` : ''}</div>
-        </div>
-        <div style="display: flex; gap: 8px;">
-          <svg style="width: 16px; height: 16px; color: #666;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-          <span style="color: #333; font-size: 13px;">${report.citizenId.name}</span>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-        <button style="background: ${color}; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">View Details</button>
-        <div style="text-align: right;"><div style="font-size: 11px; color: #999;">${date}</div><div style="font-size: 10px; color: #ccc;">ID: ${report._id.substring(0, 8)}</div></div>
-      </div>
-    `
-    return new maplibregl.Popup({ offset: 25, maxWidth: '380px', closeButton: true }).setDOMContent(div)
-  }
+      `;
 
-  if (loading) {
+      const marker = new maplibregl.Marker({ 
+        color: color,
+        draggable: false
+      })
+        .setLngLat(coords)
+        .setPopup(new maplibregl.Popup({ offset: 25, maxWidth: '300px' }).setHTML(popupContent))
+        .addTo(map);
+
+      marker.getElement().addEventListener("click", () => {
+        map.flyTo({ 
+          center: coords, 
+          zoom: 14,
+          speed: 1.2,
+          curve: 1.5,
+          easing: (t) => t,
+          essential: true 
+        });
+        setTimeout(() => marker.togglePopup(), 1000);
+        setSelectedReport(report);
+      });
+
+      markersRef.current.push(marker);
+    });
+  };
+
+  // Fly to report location
+  const flyToLocation = (coords, report) => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo({ 
+        center: coords, 
+        zoom: 14,
+        speed: 1.2,
+        curve: 1.5,
+        easing: (t) => t,
+        essential: true 
+      });
+      setTimeout(() => {
+        const marker = markersRef.current.find(m => {
+          const markerCoords = m.getLngLat();
+          return markerCoords.lng === coords[0] && markerCoords.lat === coords[1];
+        });
+        if (marker) {
+          marker.togglePopup();
+        }
+      }, 1500);
+      setSelectedReport(report);
+    }
+  };
+
+  // Zoom controls
+  const zoomIn = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.zoomIn();
+    }
+  };
+
+  const zoomOut = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.zoomOut();
+    }
+  };
+
+  const resetView = () => {
+    if (mapInstanceRef.current && reports.length > 0) {
+      const center = calculateCenter(reports);
+      mapInstanceRef.current.flyTo({
+        center: center,
+        zoom: 10,
+        duration: 1000
+      });
+    }
+  };
+
+  // Toggle fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setFullscreen(false);
+    }
+  };
+
+  // Loading state
+  if (isLoadingMunicipalities || isLoadingReports) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="flex items-center justify-center h-screen">
         <div className="text-center">
-          <Loader2 className="w-16 h-16 animate-spin text-blue-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Loading Map</h2>
-          <p className="text-gray-600">Preparing data...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Map Data</h2>
+          <p className="text-gray-600">Fetching municipalities and reports from server...</p>
         </div>
       </div>
-    )
+    );
   }
 
-  return (
-    <div className="relative h-screen">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur shadow-lg">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <button onClick={() => nav?.(-1) || window.history.back()} className="p-2 hover:bg-gray-100 rounded-lg">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Municipality Report Map</h1>
-                <p className="text-sm text-gray-600">{reports.length} Total • {filteredReports.length} Visible • {MUNICIPALITIES.length} Municipalities</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setShowBoundaries(!showBoundaries)} className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${showBoundaries ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-gray-300'}`}>
-                <Layers className="w-4 h-4" />
-                <span className="text-sm font-medium">Boundaries</span>
-              </button>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-10 pr-4 py-2 w-64 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex gap-3">
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="resolved">Resolved</option>
-            </select>
-            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-              <option value="all">All Categories</option>
-              <option value="road">🚧 Road</option>
-              <option value="electricity">⚡ Electricity</option>
-              <option value="water">💧 Water</option>
-            </select>
-            <button onClick={() => { setSearchQuery(''); setStatusFilter('all'); setCategoryFilter('all'); setSelectedReport(null); }} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Clear</button>
-          </div>
+  // Error state
+  if (isErrorMunicipalities || isErrorReports) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Failed to Load Data</h2>
+          <p className="text-gray-600 mb-4">Unable to fetch data from server</p>
+          <button
+            onClick={() => {
+              refetchMunicipalities();
+              refetchReports();
+            }}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center mx-auto"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry Loading
+          </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Map */}
-      <div ref={mapRef} className="absolute inset-0 bg-gray-200" />
+  // Main render with CSS
+  return (
+    <>
+      <style>{`
+        body, html { 
+          margin:0; 
+          padding:0; 
+          overflow:hidden; 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #map { 
+          width:100%; 
+          height:100vh; 
+          position:absolute; 
+          top:0; 
+          left:0; 
+        }
+        .controls { 
+          position:absolute; 
+          top:20px; 
+          left:20px; 
+          z-index:1000; 
+          background:white; 
+          padding:20px; 
+          border-radius:12px; 
+          box-shadow:0 4px 12px rgba(0,0,0,0.15); 
+          max-height:85vh; 
+          overflow-y:auto;
+          width: 320px;
+        }
+        .controls h3 { 
+          margin:0 0 20px 0; 
+          font-size:18px; 
+          color:#1f2937; 
+          border-bottom:3px solid #3b82f6; 
+          padding-bottom:12px;
+          font-weight: 600;
+        }
+        .report-card { 
+          background:#ffffff; 
+          border:1px solid #e5e7eb; 
+          border-radius:8px; 
+          padding:16px; 
+          margin:10px 0; 
+          cursor:pointer; 
+          transition:all 0.3s ease;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .report-card:hover { 
+          background:#f0f9ff; 
+          border-color:#3b82f6; 
+          transform:translateX(4px);
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .report-card h4 { 
+          margin:0 0 8px 0; 
+          font-size:14px; 
+          color:#dc2626; 
+          font-weight:bold;
+          line-height: 1.4;
+        }
+        .report-card p { 
+          margin:0 0 6px 0; 
+          font-size:12px; 
+          color:#4b5563;
+          line-height: 1.5;
+        }
+        .report-card .location { 
+          color:#3b82f6; 
+          font-weight:500;
+          font-size: 13px;
+        }
+        .report-card .municipality { 
+          color:#10b981; 
+          font-weight:500;
+          font-size: 12px;
+          margin-top: 4px;
+        }
+        .report-card .meta { 
+          color:#6b7280;
+          font-size: 11px;
+          margin-top: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .loading-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(255,255,255,0.9);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 2000;
+          font-size: 16px;
+          color: #374151;
+          font-weight: 500;
+        }
+        .legend {
+          position: absolute;
+          bottom: 20px;
+          right: 20px;
+          background: white;
+          padding: 15px;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          z-index: 1000;
+        }
+        .legend h4 {
+          margin: 0 0 10px 0;
+          font-size: 14px;
+          color: #1f2937;
+        }
+        .legend-item {
+          display: flex;
+          align-items: center;
+          margin: 5px 0;
+          font-size: 12px;
+        }
+        .legend-color {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          margin-right: 8px;
+        }
+        .map-controls {
+          position: absolute;
+          bottom: 20px;
+          left: 20px;
+          display: flex;
+          gap: 8px;
+          z-index: 1000;
+        }
+        .control-button {
+          background: white;
+          border: 1px solid #e5e7eb;
+          border-radius: 6px;
+          padding: 8px;
+          cursor: pointer;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          transition: all 0.2s;
+        }
+        .control-button:hover {
+          background: #f9fafb;
+          transform: translateY(-1px);
+        }
+        .status-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 500;
+          margin-right: 6px;
+        }
+        .selected-report {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          z-index: 1000;
+          background: white;
+          padding: 20px;
+          border-radius: 12px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          width: 300px;
+          max-height: 80vh;
+          overflow-y: auto;
+        }
+      `}</style>
 
-      {/* Controls */}
-      <div className="absolute bottom-4 right-4 z-10 flex flex-col gap-2">
-        <button onClick={() => mapInstance.current?.zoomIn()} className="p-3 bg-white rounded-lg shadow-lg hover:bg-gray-50"><ZoomIn className="w-5 h-5" /></button>
-        <button onClick={() => mapInstance.current?.zoomOut()} className="p-3 bg-white rounded-lg shadow-lg hover:bg-gray-50"><ZoomOut className="w-5 h-5" /></button>
-        <button onClick={() => { mapInstance.current?.flyTo({ center: [85.324, 27.7172], zoom: 11, duration: 1000 }); setSelectedReport(null); }} className="p-3 bg-white rounded-lg shadow-lg hover:bg-gray-50"><Navigation className="w-5 h-5" /></button>
-      </div>
+      {loading && (
+        <div className="loading-overlay">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mr-3" />
+          Initializing map...
+        </div>
+      )}
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-10 bg-white rounded-lg shadow-lg p-4">
-        <h3 className="font-semibold mb-2">Status</h3>
-        {Object.entries(STATUS_COLORS).map(([status, color]) => (
-          <div key={status} className="flex items-center gap-2 mb-1">
-            <div className="w-3 h-3 rounded-full" style={{ background: color }} />
-            <span className="text-sm capitalize">{status.replace('_', ' ')}</span>
+      <div className="controls">
+        <div className="flex items-center justify-between mb-4">
+          <h3>📍 Recent Reports ({reports.length})</h3>
+          <button
+            onClick={() => {
+              refetchMunicipalities();
+              refetchReports();
+            }}
+            className="p-1 hover:bg-gray-100 rounded-lg"
+            title="Refresh data"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="mb-4 space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search reports..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
-        ))}
-        {selectedReport && (
-          <div className="mt-3 pt-3 border-t">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-sm font-medium">Selected</span>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
+              >
+                {statusOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 text-gray-400" />
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
+              >
+                {categories.map(cat => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.icon} {cat.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+        </div>
+
+        {filteredReports.length === 0 ? (
+          <div className="text-center py-8">
+            <MapPin className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-600">No reports found</p>
+          </div>
+        ) : (
+          filteredReports.map((report) => {
+            const coords = report.location?.coordinates 
+              ? [report.location.coordinates.lng, report.location.coordinates.lat]
+              : null;
+            
+            return (
+              <div
+                key={report._id}
+                className={`report-card ${!coords ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={() => coords && flyToLocation(coords, report)}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <h4>{report.title}</h4>
+                  <span 
+                    className="status-badge"
+                    style={{ 
+                      background: `${getMarkerColor(report.status)}20`,
+                      color: getMarkerColor(report.status)
+                    }}
+                  >
+                    {report.status}
+                  </span>
+                </div>
+                <p className="location">
+                  📌 {report.location?.address || 'No address'}
+                </p>
+                <p className="municipality">
+                  🏛️ {report.municipalityId?.name || 'Unknown Municipality'}
+                </p>
+                <p>{report.description?.substring(0, 70)}...</p>
+                <div className="meta">
+                  <span>📅 {new Date(report.createdAt).toLocaleDateString()}</span>
+                  <span style={{ color: getMarkerColor(report.category) }}>
+                    {report.category}
+                  </span>
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
 
-      {/* Reports List */}
-      <div className="absolute top-32 left-4 bottom-4 w-80 bg-white rounded-xl shadow-lg overflow-hidden hidden md:block z-10">
-        <div className="p-4 border-b">
-          <h2 className="font-semibold">Reports ({filteredReports.length})</h2>
+      <div className="legend">
+        <h4>Map Legend</h4>
+        <div className="legend-item">
+          <div className="legend-color" style={{ backgroundColor: '#dc2626' }}></div>
+          <span>Report Location</span>
         </div>
-        <div className="overflow-y-auto h-full pb-20">
-          {filteredReports.map(r => {
-            const coords = getCoords(r)
-            const isSelected = selectedReport?._id === r._id
-            return (
-              <div key={r._id} onClick={() => coords && mapInstance.current?.flyTo({ center: coords, zoom: 15, duration: 1000 }) || setSelectedReport(r)} className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}>
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: isSelected ? '#ef4444' : STATUS_COLORS[r.status] }}>{CATEGORY_ICONS[r.category]}</div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{r.title}</h3>
-                    <div className="flex gap-2 mt-1">
-                      <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ background: `${STATUS_COLORS[r.status]}20`, color: STATUS_COLORS[r.status] }}>{r.status}</span>
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100">{r.priority}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-2 truncate">{r.location.address}</p>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+        <div className="legend-item">
+          <div className="legend-color" style={{ backgroundColor: '#1d4ed8' }}></div>
+          <span>Municipality Center</span>
+        </div>
+        <div className="legend-item">
+          <div className="legend-color" style={{ 
+            backgroundColor: '#3b82f6',
+            opacity: 0.3,
+            border: '1px dashed #1d4ed8'
+          }}></div>
+          <span>Municipality Boundary</span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <h5 className="text-xs font-medium text-gray-700 mb-2">Status Colors:</h5>
+          {statusOptions.slice(1).map(option => (
+            <div key={option.value} className="legend-item">
+              <div 
+                className="legend-color" 
+                style={{ backgroundColor: getMarkerColor(option.value) }}
+              ></div>
+              <span className="text-xs">{option.label}</span>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
-  )
+
+      <div className="map-controls">
+        <button onClick={zoomIn} className="control-button" title="Zoom In">
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        <button onClick={zoomOut} className="control-button" title="Zoom Out">
+          <ZoomOut className="w-5 h-5" />
+        </button>
+        <button onClick={resetView} className="control-button" title="Reset View">
+          <Navigation className="w-5 h-5" />
+        </button>
+        <button onClick={toggleFullscreen} className="control-button" title="Toggle Fullscreen">
+          {fullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {selectedReport && (
+        <div className="selected-report">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900">Report Details</h3>
+            <button
+              onClick={() => setSelectedReport(null)}
+              className="p-1 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium text-gray-900">{selectedReport.title}</h4>
+              <div className="flex gap-2 mt-2">
+                <span 
+                  className="status-badge"
+                  style={{ 
+                    background: `${getMarkerColor(selectedReport.status)}20`,
+                    color: getMarkerColor(selectedReport.status)
+                  }}
+                >
+                  {selectedReport.status}
+                </span>
+                <span className="status-badge bg-gray-100 text-gray-700">
+                  {selectedReport.category}
+                </span>
+                <span className="status-badge bg-gray-100 text-gray-700">
+                  {selectedReport.priority || 'Medium'} Priority
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm text-gray-600">{selectedReport.description}</p>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h5 className="font-medium text-gray-900 mb-2 flex items-center">
+                <MapPin className="w-4 h-4 mr-2 text-blue-500" />
+                Location Details
+              </h5>
+              <p className="text-sm text-gray-700">{selectedReport.location?.address || 'No address'}</p>
+              {selectedReport.location?.ward && (
+                <p className="text-xs text-gray-500 mt-1">Ward: {selectedReport.location.ward}</p>
+              )}
+              {selectedReport.location?.coordinates && (
+                <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+                  <div>
+                    <span className="text-gray-500">Lat:</span>
+                    <p className="font-mono">{selectedReport.location.coordinates.lat}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Lng:</span>
+                    <p className="font-mono">{selectedReport.location.coordinates.lng}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedReport.citizenId && (
+              <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-teal-500 flex items-center justify-center text-white font-medium mr-3">
+                  {selectedReport.citizenId.name?.charAt(0) || 'C'}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">{selectedReport.citizenId.name}</p>
+                  <p className="text-xs text-gray-600">Citizen Reporter</p>
+                </div>
+              </div>
+            )}
+
+            <div className="border-t pt-4">
+              <button
+                onClick={() => {
+                  navigate(`/reports/${selectedReport._id}`);
+                }}
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mb-2"
+              >
+                View Full Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div id="map" ref={mapContainerRef}></div>
+    </>
+  );
 }
 
-export default MapView
+export default MapView;

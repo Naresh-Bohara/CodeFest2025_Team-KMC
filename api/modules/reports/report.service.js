@@ -586,6 +586,49 @@ class ReportService {
       }
     };
   };
+  
+  getDashboardCounts = async () => {
+  try {
+    // Single aggregation query for all counts - MOST EFFICIENT
+    const result = await ReportModel.aggregate([
+      {
+        $facet: {
+          total: [{ $count: "count" }],
+          pending: [
+            { $match: { status: "pending" } },
+            { $count: "count" }
+          ],
+          assigned: [
+            { $match: { status: "assigned" } },
+            { $count: "count" }
+          ],
+          in_progress: [
+            { $match: { status: "in_progress" } },
+            { $count: "count" }
+          ],
+          resolved: [
+            { $match: { status: "resolved" } },
+            { $count: "count" }
+          ]
+        }
+      }
+    ]);
+
+    // Extract counts with fallback to 0
+    const counts = result[0];
+    
+    return {
+      total: counts.total[0]?.count || 0,
+      pending: counts.pending[0]?.count || 0,
+      assigned: counts.assigned[0]?.count || 0,
+      in_progress: counts.in_progress[0]?.count || 0,
+      resolved: counts.resolved[0]?.count || 0
+    };
+
+  } catch (error) {
+    throw error;
+  }
+}
 }
 
 const reportSvc = new ReportService();

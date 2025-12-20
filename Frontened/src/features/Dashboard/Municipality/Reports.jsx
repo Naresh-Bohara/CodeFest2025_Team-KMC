@@ -27,6 +27,7 @@ import { useGetReportsQuery } from '../../../store/api/reportApi'
 
 const MunicipalityReports = () => {
   const { data: reportsData, isLoading, isError, refetch } = useGetReportsQuery()
+  console.log(reportsDatagitgit );
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
