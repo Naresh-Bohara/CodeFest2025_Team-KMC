@@ -22,23 +22,30 @@ class ReportController {
     }
   }
 
-  getReports = async (req, res, next) => {
-    try {
-      const filter = req.validatedQuery || req.query;
-      const result = await reportSvc.getReports(filter);
+getReports = async (req, res, next) => {
+  try {
+    const filter = req.validatedQuery || req.query;
+    const user = req.loggedInUser; // Get logged in user info
+    
+    const result = await reportSvc.getReports(filter, user);
 
-      res.json({
-        data: result.reports,
-        pagination: result.pagination,
-        message: "Reports fetched successfully",
-        status: HttpResponse.success,
-        options: null
-      });
+    res.json({
+      data: result.reports,
+      pagination: result.pagination,
+      message: "Reports fetched successfully",
+      status: HttpResponse.success,
+      options: null,
+      meta: {
+        userRole: result.userRole,
+        appliedFilters: result.appliedFilters,
+        totalReports: result.pagination.total
+      }
+    });
 
-    } catch (exception) {
-      next(exception);
-    }
+  } catch (exception) {
+    next(exception);
   }
+}
 
   getReport = async (req, res, next) => {
     try {

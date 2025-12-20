@@ -197,7 +197,7 @@ class ReportService {
     
     return isWithin;
   }
-
+ 
   // Update report method with basic validation
   updateReport = async (reportId, updateData, files, citizenId) => {
     const report = await ReportModel.findOne({ _id: reportId, citizenId });
@@ -284,36 +284,63 @@ class ReportService {
     return report;
   }
 
-  getReports = async (filter = {}) => {
-    const { page = 1, limit = 10, category, status, severity, ...otherFilters } = filter;
+getReports = async (filter = {}, user) => {
+  const { page = 1, limit = 10, category, status, severity, ...otherFilters } = filter;
 
-    const query = { ...otherFilters };
-    if (category) query.category = category;
-    if (status) query.status = status;
-    if (severity) query.severity = severity;
-
-    const skip = (page - 1) * limit;
-    const [reports, total] = await Promise.all([
-      ReportModel.find(query)
-        .populate('citizenId', 'name profileImage')
-        .populate('municipalityId', 'name location.city')
-        .populate('assignedStaffId', 'name profileImage')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      ReportModel.countDocuments(query)
-    ]);
-
-    return {
-      reports,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    };
+  const query = { ...otherFilters };
+  
+  // Filter based on user role
+  if (user.role === 'citizen') {
+    // Citizens can only see their own reports
+    query.citizenId = user._id;
+  } else if (user.role === 'municipality_admin' || user.role === 'field_staff') {
+    // Municipality staff can only see reports from their municipality
+    if (!user.municipalityId) {
+      throw {
+        status: HttpResponseCode.FORBIDDEN,
+        message: "Your account is not assigned to any municipality",
+        statusCode: HttpResponse.accessDenied
+      };
+    }
+    query.municipalityId = user.municipalityId;
   }
+  // System admin can see all reports (no additional filter)
+
+  // Apply category filter if provided
+  if (category) query.category = category;
+  
+  // Apply status filter if provided
+  if (status) query.status = status;
+  
+  // Apply severity filter if provided
+  if (severity) query.severity = severity;
+
+  const skip = (page - 1) * limit;
+  const [reports, total] = await Promise.all([
+    ReportModel.find(query)
+      .populate('citizenId', 'name profileImage')
+      .populate('municipalityId', 'name location.city')
+      .populate('assignedStaffId', 'name profileImage')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    ReportModel.countDocuments(query)
+  ]);
+
+  return {
+    reports,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit)
+    },
+    userRole: user.role,
+    appliedFilters: {
+      municipality: user.role === 'municipality_admin' || user.role === 'field_staff' ? user.municipalityId : 'all'
+    }
+  };
+}
 
   getReportById = async (reportId) => {
     const report = await ReportModel.findById(reportId)

@@ -12,6 +12,12 @@ const createReportDTO = Joi.object({
     "string.min": "Description must be at least 10 characters"
   }),
 
+    priority: Joi.string() 
+    .valid('low', 'medium', 'high', 'urgent')
+    .default('medium')
+    .messages({
+      "any.only": "Invalid priority"
+    }),
   category: Joi.string()
     .valid('road', 'electricity', 'water', 'sanitation', 'safety', 'emergency', 'illegal_activity')
     .required()
